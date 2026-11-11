@@ -194,7 +194,7 @@ function renderBoard() {
     const cls = ['cell', 'p-' + D.pat];
     if (w & 1) cls.push('wt'); if (w & 2) cls.push('wr'); if (w & 4) cls.push('wb'); if (w & 8) cls.push('wl');
     if (it) { cls.push(ITEMS[it].block ? 'blocked' : 'stand'); if (it === 'tappeto') cls.push('rug'); }
-    if (help && !S.solved && occ < 0 && !P.blocked[c] && (rowOcc[r] || colOcc[k])) cls.push('shade');
+    if (help && !S.solved && occ < 0 && (rowOcc[r] || colOcc[k])) cls.push('shade');
     if (S.hintCell === c) cls.push('hint');
     if (rm === crimeRoom) cls.push('crime');
     if (S.sel != null && occ === S.sel) cls.push('focus');
@@ -235,7 +235,7 @@ function renderLegend() {
   $('#legend').innerHTML =
     `<h3>Qui ci si può stare</h3><ul>${stand.map(li).join('')}</ul>` +
     `<h3>Qui no: mobili e ostacoli</h3><ul>${block.map(li).join('')}</ul>` +
-    (P.win.length ? `<h3>Altro</h3><ul><li><span class="wsw"></span>Finestra</li></ul>` : '');
+    `<h3>Altro</h3><ul>${P.win.length ? '<li><span class="wsw"></span>Finestra</li>' : ''}<li><span class="nsw">↑ N</span>Nord è in alto</li></ul>`;
 }
 function renderTools() {
   $('#modePlace').setAttribute('aria-pressed', S.mode === 'place');
@@ -271,7 +271,11 @@ function onCell(c) {
     pushHist(); S.place[occ] = -1; S.sel = occ;
     afterMove(`Hai preso ${P.persons[occ].name}: tocca la nuova casella.`);
   } else {
-    setStatus('Prima scegli una persona dalla lista, poi tocca la casella.');
+    const bl = helpersOn() ? blockersOf(c) : [];
+    if (bl.length) {
+      bl.forEach(({ x }) => board.querySelector(`.cell[data-c="${x}"]`)?.classList.add('blocker'));
+      setStatus(`Questa casella è bloccata da ${bl.map(({ p }) => chip(p)).join(' e ')}: sono già nella stessa riga o colonna.`);
+    } else setStatus(`Prima scegli una persona ${where()}, poi tocca la casella.`);
   }
 }
 function afterMove(msg) {
@@ -433,7 +437,18 @@ board.addEventListener('mouseover', e => {
   board.querySelectorAll('.cell.hl').forEach(x => x.classList.remove('hl'));
   board.querySelectorAll(`.cell[data-r="${r}"]`).forEach(x => x.classList.add('hl'));
 });
-board.addEventListener('mouseleave', () => { board.dataset.hl = ''; board.querySelectorAll('.cell.hl').forEach(x => x.classList.remove('hl')); });
+// passando su una casella rigata, si illumina chi blocca quella riga/colonna
+const blockersOf = c => {
+  const n = S.P.n, r = (c / n) | 0, k = c % n;
+  return S.place.map((x, p) => ({ x, p })).filter(({ x }) => x >= 0 && x !== c && (((x / n) | 0) === r || x % n === k));
+};
+board.addEventListener('mouseover', e => {
+  const cell = e.target.closest('.cell');
+  board.querySelectorAll('.cell.blocker').forEach(x => x.classList.remove('blocker'));
+  if (!cell || !cell.classList.contains('shade')) return;
+  for (const { x } of blockersOf(+cell.dataset.c)) board.querySelector(`.cell[data-c="${x}"]`)?.classList.add('blocker');
+});
+board.addEventListener('mouseleave', () => { board.querySelectorAll('.cell.blocker').forEach(x => x.classList.remove('blocker')); board.dataset.hl = ''; board.querySelectorAll('.cell.hl').forEach(x => x.classList.remove('hl')); });
 $('#tray').addEventListener('click', e => {
   const b = e.target.closest('.person'); if (!b || S.solved) return;
   const i = +b.dataset.p; S.mode = 'place'; S.hintCell = -1;
