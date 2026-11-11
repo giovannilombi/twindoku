@@ -1,0 +1,8 @@
+{
+  "name": "giallo-a-quadretti",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build-cases": "node tools/build-cases.js"
+  }
+}
