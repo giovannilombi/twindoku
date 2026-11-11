@@ -27,25 +27,29 @@ let INDEX = SIZES.map(n => ({ n, count: 0 }));
 async function loadIndex() {
   try { const r = await fetch('cases/index.json'); if (r.ok) INDEX = await r.json(); } catch (e) { /* uso il default */ }
 }
-const solvedSet = () => new Set(store.get('gq2:solved', []));
+// I progressi sono legati all'impronta del caso (C.key), non al numero: se l'archivio cambia, non si mescolano.
+const solvedSet = () => new Set(store.get('gq3:solved', []));
+const keyOf = id => { const [n, i] = id.split('-').map(Number); const C = cache[n] && cache[n][i - 1]; return C ? C.key : null; };
+const loadAll = () => Promise.all(INDEX.map(x => loadSize(x.n).catch(() => [])));
 const starsOf = hints => (hints === 0 ? 3 : hints <= 2 ? 2 : 1);
 function markSolved(id, hints) {
-  const solved = store.get('gq2:solved', []);
-  if (!solved.includes(id)) { solved.push(id); store.set('gq2:solved', solved); }
-  const stars = store.get('gq2:stars', {});
+  const solved = store.get('gq3:solved', []);
+  if (!solved.includes(id)) { solved.push(id); store.set('gq3:solved', solved); }
+  const stars = store.get('gq3:stars', {});
   stars[id] = Math.max(stars[id] || 0, starsOf(hints));
-  store.set('gq2:stars', stars);
+  store.set('gq3:stars', stars);
 }
 const allIds = () => INDEX.flatMap(x => Array.from({ length: x.count }, (_, i) => `${x.n}-${i + 1}`));
 function nextUnsolved(fromId) {
   const all = allIds(), solved = solvedSet(), k = Math.max(0, all.indexOf(fromId));
-  return all.slice(k + 1).find(id => !solved.has(id)) || all.find(id => !solved.has(id)) || null;
+  const todo = id => !solved.has(keyOf(id));
+  return all.slice(k + 1).find(todo) || all.find(todo) || null;
 }
 
 /* ---------------- stato ---------------- */
 let S = null;
 const helpersOn = () => store.get('gq2:helpers', true);
-const saveKey = () => `gq2:case:${S.id}`;
+const saveKey = () => `gq3:case:${S.key}`;
 function save() {
   store.set(saveKey(), { place: S.place, marks: [...S.marks], hints: S.hints, elapsed: S.elapsed, solved: S.solved, accused: S.accused, struck: [...S.struck] });
 }
@@ -57,22 +61,22 @@ async function openCase(id) {
   const C = list[i - 1];
   if (!C) { openCase('5-1'); return; }
   const P = hydrate(C);
-  S = { id, n, idx: i, P, place: new Array(P.n).fill(-1), marks: new Set(), sel: null, mode: 'place', hist: [], hints: 0, elapsed: 0, solved: false, struck: new Set(), hintCell: -1, resetArm: false, accused: false };
+  S = { id, key: C.key, n, idx: i, P, place: new Array(P.n).fill(-1), marks: new Set(), sel: null, mode: 'place', hist: [], hints: 0, elapsed: 0, solved: false, struck: new Set(), hintCell: -1, resetArm: false, accused: false };
   const saved = store.get(saveKey(), null);
   if (saved && Array.isArray(saved.place) && saved.place.length === P.n) {
     Object.assign(S, { place: saved.place, marks: new Set(saved.marks || []), hints: saved.hints || 0, elapsed: saved.elapsed || 0, solved: !!saved.solved, accused: !!saved.accused, struck: new Set(saved.struck || []) });
   }
   // un caso risolto resta sempre con la soluzione sulla mappa
-  if (solvedSet().has(id) || S.solved) {
+  if (solvedSet().has(C.key) || S.solved) {
     Object.assign(S, { place: [...P.sol], marks: new Set(), solved: true });
-    if (solvedSet().has(id)) S.accused = true;
+    if (solvedSet().has(C.key)) S.accused = true;
   }
   store.set('gq2:last', id);
   if (location.hash.slice(1) !== `caso-${id}`) { try { history.replaceState(null, '', `#caso-${id}`); } catch (e) { /* ok */ } }
   document.title = `${P.sc.title} · Giallo a Quadretti`;
   renderAll();
-  if (S.solved && S.accused) setStatus(`✓ Caso risolto! Il colpevole era ${P.persons[P.murderer].name}. Premi › o “Archivio” per un caso nuovo.`, 'ok');
-  else if (S.solved) setStatus('Mappa completata! Tocca la mappa per accusare il colpevole.', 'ok');
+  if (S.solved && S.accused) setStatus(solvedMsg(), 'ok');
+  else if (S.solved) setStatus(ACCUSE_MSG, 'ok');
   else setStatus(`Scegli una persona ${where()}, poi tocca la casella dove si trovava.`);
 }
 
@@ -115,7 +119,7 @@ function clueHTML(cl) {
   switch (cl.t) {
     case 'same': return [`${A} e ${B} erano nella stessa stanza.`, `${A} stava chiacchierando con ${B}.`, `${A} e ${B} stavano litigando nella stessa stanza.`][cl.v || 0];
     case 'diff': return [`${A} e ${B} erano in stanze diverse.`, `${A} e ${B} avevano litigato e stavano in stanze diverse.`][cl.v || 0];
-    case 'diag': return `${A} e ${B} erano vicinissim${P.persons[cl.a].g === 'f' && P.persons[cl.b].g === 'f' ? 'e' : 'i'}, in diagonale.`;
+    case 'diag': return `${A} e ${B} erano nella stessa stanza, vicinissim${P.persons[cl.a].g === 'f' && P.persons[cl.b].g === 'f' ? 'e' : 'i'} in diagonale.`;
     case 'north': return `${A} era più a nord di ${B}.`;
     case 'west': return `${A} era più a ovest di ${B}.`;
     case 'alone': return `${A} era da sol${oa(g)} nella sua stanza.`;
@@ -145,7 +149,7 @@ function renderStory() {
   const P = S.P, sc = P.sc;
   const el = $('#story');
   el.style.setProperty('--sc', sc.color);
-  el.innerHTML = `<div class="eyebrow"><b>Caso ${S.n}×${S.n} n° ${S.idx}</b><span>${TIERS[S.n]}</span><span>${sc.place}</span>${solvedSet().has(S.id) ? '<span class="solvedtag">✓ Risolto</span>' : ''}</div>
+  el.innerHTML = `<div class="eyebrow"><b>Caso ${S.n}×${S.n} n° ${S.idx}</b><span>${TIERS[S.n]}</span><span>${sc.place}</span>${solvedSet().has(S.key) ? '<span class="solvedtag">✓ Risolto</span>' : ''}</div>
     <h1>${sc.title}</h1>
     <p class="intro">${fill(sc.intros[P.story.intro], P)}</p><span class="more">Leggi tutta la storia ▾</span>
     <p class="weapon">Accanto alla vittima: <b>${sc.weapons[P.story.weapon]}</b>.</p>`;
@@ -190,7 +194,7 @@ function renderBoard() {
     const cls = ['cell', 'p-' + D.pat];
     if (w & 1) cls.push('wt'); if (w & 2) cls.push('wr'); if (w & 4) cls.push('wb'); if (w & 8) cls.push('wl');
     if (it) { cls.push(ITEMS[it].block ? 'blocked' : 'stand'); if (it === 'tappeto') cls.push('rug'); }
-    if (help && occ < 0 && !P.blocked[c] && (rowOcc[r] || colOcc[k])) cls.push('shade');
+    if (help && !S.solved && occ < 0 && !P.blocked[c] && (rowOcc[r] || colOcc[k])) cls.push('shade');
     if (S.hintCell === c) cls.push('hint');
     if (rm === crimeRoom) cls.push('crime');
     if (S.sel != null && occ === S.sel) cls.push('focus');
@@ -240,6 +244,8 @@ function renderTools() {
   $('#hintBtn').disabled = S.solved;
   $('#resetBtn').textContent = S.resetArm ? 'Sicuro? Tocca ancora' : 'Ricomincia';
 }
+const ACCUSE_MSG = '<span>Tutti al posto giusto! Ora tocca a te.</span><button type="button" class="btn primary cta" data-act="accuse">🔎 Indica il colpevole</button>';
+const solvedMsg = () => `<span>✓ Caso risolto! Il colpevole era ${S.P.persons[S.P.murderer].name}.</span><button type="button" class="btn cta" data-act="win">Rivedi il finale</button><button type="button" class="btn primary cta" data-act="nextu">Prossimo caso ›</button>`;
 function setStatus(msg, kind) { const s = $('#status'); s.className = 'status' + (kind ? ' ' + kind : ''); s.innerHTML = msg; }
 function refresh() { save(); renderBoard(); renderTray(); renderClues(); renderTools(); renderMeta(); }
 
@@ -275,7 +281,7 @@ function afterMove(msg) {
     if (conflicts().size) { setStatus('Due persone sono nella stessa riga o colonna: ce ne può essere una sola!', 'ko'); return; }
     if (S.place.every((c, i) => c === P.sol[i])) {
       S.solved = true; S.marks = new Set(); save(); renderTools(); renderBoard();
-      setStatus('Tutti al posto giusto! Ora: chi è il colpevole?', 'ok');
+      setStatus(ACCUSE_MSG, 'ok');
       setTimeout(openAccuse, 350); return;
     }
     const wrong = P.clues.filter(cl => evalClue(cl, S.place, P) === false).length;
@@ -334,7 +340,7 @@ function openRules() {
   <ol>
     <li>In ogni <b>riga</b> e in ogni <b>colonna</b> della mappa c'è <b>una sola persona</b>.</li>
     <li>Nessuno può stare su tavoli, armadi, piante e altri mobili pesanti. Su sedie, poltrone, divani, letti, tappeti e panche invece sì (la legenda a destra ti dice cosa è cosa).</li>
-    <li><b>Accanto</b> vuol dire nella casella vicina: sopra, sotto, a destra o a sinistra. <b>In diagonale</b> vuol dire che le caselle si toccano con un angolo.</li>
+    <li><b>Accanto</b> vuol dire nella casella vicina (sopra, sotto, a destra o a sinistra) <b>nella stessa stanza</b>: se c'è un muro in mezzo non vale. <b>In diagonale</b> vuol dire nella stessa stanza, in due caselle che si toccano con un angolo.</li>
     <li><b>In un angolo</b> della stanza vuol dire che la casella tocca due muri che formano un angolo. <b>Al centro</b> vuol dire che non tocca nessun muro.</li>
     <li><b>Vicino a una finestra</b>: la casella ha una finestra azzurra su un lato. <b>Nord</b> è in alto sulla mappa, <b>ovest</b> a sinistra.</li>
     <li>Il <b>colpevole</b> è l'unica persona che si trovava nella stessa stanza della vittima.</li>
@@ -347,23 +353,24 @@ function openRules() {
 let archiveSize = null;
 async function openArchive(n) {
   archiveSize = n || archiveSize || (S ? S.n : 5);
-  const solved = solvedSet();
+  const solved = new Set([...solvedSet()].filter(k => INDEX.some(x => (cache[x.n] || []).some(C => C.key === k))));
   const total = INDEX.reduce((s, x) => s + x.count, 0);
   let list = [];
-  try { list = await loadSize(archiveSize); } catch (e) { /* mostro vuoto */ }
-  const starMap = store.get('gq2:stars', {});
+  await loadAll();
+  list = cache[archiveSize] || [];
+  const starMap = store.get('gq3:stars', {});
   const nu = nextUnsolved(S ? S.id : null);
   const tabs = INDEX.map(x => {
-    const done = Array.from({ length: x.count }, (_, i) => `${x.n}-${i + 1}`).filter(id => solved.has(id)).length;
+    const done = (cache[x.n] || []).filter(C => solved.has(C.key)).length;
     return `<button type="button" data-size="${x.n}" aria-pressed="${x.n === archiveSize}">${x.n}×${x.n}<small>${TIERS[x.n]} · ${done}/${x.count}</small></button>`;
   }).join('');
   const cards = list.map((C, i) => {
     const id = `${archiveSize}-${i + 1}`, sc = SCENARIOS[C.sc];
-    const st = store.get(`gq2:case:${id}`, null);
-    const state = solved.has(id) ? 'solved' : st && st.place && st.place.some(c => c >= 0) ? 'started' : '';
+    const st = store.get(`gq3:case:${C.key}`, null);
+    const state = solved.has(C.key) ? 'solved' : st && st.place && st.place.some(c => c >= 0) ? 'started' : '';
     return `<button type="button" class="casebtn ${state}${S && S.id === id ? ' current' : ''}" data-open="${id}" style="--sc:${sc.color}">
       <span class="st">${state === 'solved' ? '✓' : state === 'started' ? '● in corso' : ''}</span>
-      <b>N° ${i + 1}</b><small>${sc.title}</small>${state === 'solved' ? `<span class="stars">${'★'.repeat(starMap[id] || 1)}${'☆'.repeat(3 - (starMap[id] || 1))}</span>` : ''}</button>`;
+      <b>N° ${i + 1}</b><small>${sc.title}</small>${state === 'solved' ? `<span class="stars">${'★'.repeat(starMap[C.key] || 1)}${'☆'.repeat(3 - (starMap[C.key] || 1))}</span>` : ''}</button>`;
   }).join('');
   openModal(`<h2>Archivio dei casi</h2>
     <p class="progress">Hai risolto <b>${solved.size}</b> ${solved.size === 1 ? 'caso' : 'casi'} su <b>${total}</b>. Più è grande la mappa, più è difficile. In ogni gruppo i casi vanno dal più semplice al più tosto.</p>
@@ -380,9 +387,9 @@ function openAccuse() {
 function accuse(i) {
   const P = S.P;
   if (i === P.murderer) {
-    markSolved(S.id, S.hints);
+    markSolved(S.key, S.hints);
     S.accused = true; save(); renderBoard();
-    setStatus(`✓ Caso risolto! Il colpevole era ${P.persons[P.murderer].name}. Premi › o “Archivio” per un caso nuovo.`, 'ok');
+    setStatus(solvedMsg(), 'ok');
     renderStory(); openWin(); confetti();
   } else {
     const m = $('#modal'); m.classList.remove('shake'); void m.offsetWidth; m.classList.add('shake');
@@ -441,6 +448,12 @@ $('#clues').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key ==
 $('#helpers').addEventListener('change', e => { store.set('gq2:helpers', e.target.checked); renderBoard(); renderClues(); });
 $('#modePlace').addEventListener('click', () => { S.mode = 'place'; renderTools(); });
 $('#modeMark').addEventListener('click', () => { S.mode = 'mark'; S.sel = null; renderTools(); renderTray(); setStatus('Modalità ✕: tocca le caselle dove sei sicuro che non ci sia nessuno.'); });
+$('#status').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'accuse') openAccuse();
+  else if (b.dataset.act === 'win') openWin();
+  else if (b.dataset.act === 'nextu') { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }
+});
 $('#undoBtn').addEventListener('click', undo);
 $('#hintBtn').addEventListener('click', hint);
 $('#resetBtn').addEventListener('click', reset);
@@ -480,6 +493,7 @@ addEventListener('hashchange', () => { const id = fromHash(); if (id && (!S || i
 
 (async () => {
   await loadIndex();
+  await loadAll();
   await openCase(fromHash() || store.get('gq2:last', null) || '5-1');
   if (!store.get('gq2:seenRules', false)) openRules();
 })();

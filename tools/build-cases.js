@@ -18,7 +18,9 @@ for (const n of SIZES) {
   }
   // dal più facile al più difficile (sforzo del risolutore, poi numero di indizi al contrario)
   out.sort((a, b) => a.effort / (a.clues.length) - b.effort / (b.clues.length));
-  out.forEach((C, i) => { C.id = `${n}-${i + 1}`; delete C.effort; });
+  // impronta del caso: i progressi salvati restano validi anche se l'archivio viene rigenerato
+  const fnv = str => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  out.forEach((C, i) => { C.id = `${n}-${i + 1}`; C.key = `${n}.${fnv(C.room + '|' + C.sol.join(',') + '|' + JSON.stringify(C.items))}`; delete C.effort; });
   writeFileSync(new URL(`../cases/${n}.json`, import.meta.url), JSON.stringify(out));
   index.push({ n, count: out.length });
   console.log(`${n}×${n}: ${out.length} casi in ${((Date.now() - t0) / 1000).toFixed(1)}s`);

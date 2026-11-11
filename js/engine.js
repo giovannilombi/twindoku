@@ -51,7 +51,7 @@ export function predOK(P, c, pr) {
     case 'room': return P.room[c] === pr.r;
     case 'notroom': return P.room[c] !== pr.r;
     case 'on': return P.items[c] === pr.it;
-    case 'near': return nbrs(c, P.n).some(m => P.items[m] === pr.it);
+    case 'near': return nbrs(c, P.n).some(m => P.items[m] === pr.it && P.room[m] === P.room[c]);
     case 'corner': return isCorner(P, c);
     case 'center': return isCenter(P, c);
     case 'window': return P.winAt[c] !== 0;
@@ -67,7 +67,7 @@ export function evalClue(cl, pos, P) {
     case 'u': return a < 0 ? null : cl.p.every(pr => predOK(P, a, pr));
     case 'same': return a < 0 || b < 0 ? null : P.room[a] === P.room[b];
     case 'diff': return a < 0 || b < 0 ? null : P.room[a] !== P.room[b];
-    case 'diag': return a < 0 || b < 0 ? null : Math.abs(((a / n) | 0) - ((b / n) | 0)) === 1 && Math.abs((a % n) - (b % n)) === 1;
+    case 'diag': return a < 0 || b < 0 ? null : P.room[a] === P.room[b] && Math.abs(((a / n) | 0) - ((b / n) | 0)) === 1 && Math.abs((a % n) - (b % n)) === 1;
     case 'north': return a < 0 || b < 0 ? null : ((a / n) | 0) < ((b / n) | 0);
     case 'west': return a < 0 || b < 0 ? null : a % n < b % n;
     case 'alone': {
@@ -142,7 +142,7 @@ export function countSolutions(P, clues, limit = 2, maxNodes = 4e6) {
       switch (cl.t) {
         case 'same': if (P.room[ca] !== P.room[cb]) return false; break;
         case 'diff': if (P.room[ca] === P.room[cb]) return false; break;
-        case 'diag': if (Math.abs(((ca / n) | 0) - ((cb / n) | 0)) !== 1 || Math.abs((ca % n) - (cb % n)) !== 1) return false; break;
+        case 'diag': if (P.room[ca] !== P.room[cb] || Math.abs(((ca / n) | 0) - ((cb / n) | 0)) !== 1 || Math.abs((ca % n) - (cb % n)) !== 1) return false; break;
         case 'north': if (((ca / n) | 0) >= ((cb / n) | 0)) return false; break;
         case 'west': if (ca % n >= cb % n) return false; break;
       }
@@ -297,7 +297,7 @@ function buildPool(P, rng) {
   for (let p = 0; p < n; p++) {
     const c = pos[p], rm = { k: 'room', r: P.room[c] };
     const it = P.items[c];
-    const near = [...new Set(nbrs(c, n).map(m => P.items[m]).filter(Boolean))];
+    const near = [...new Set(nbrs(c, n).filter(m => P.room[m] === P.room[c]).map(m => P.items[m]).filter(Boolean))];
     const nearP = near.length ? { k: 'near', it: pick(near, rng) } : null;
     add('room', { t: 'u', a: p, p: [rm] });
     if (isCorner(P, c)) { add('roomCorner', { t: 'u', a: p, p: [rm, { k: 'corner' }] }); add('corner', { t: 'u', a: p, p: [{ k: 'corner' }] }); if (nearP) add('cornerNear', { t: 'u', a: p, p: [{ k: 'corner' }, nearP] }); }
@@ -318,7 +318,7 @@ function buildPool(P, rng) {
     const cp = pos[p], cq = pos[q], [a, b] = rng() < 0.5 ? [p, q] : [q, p];
     if (P.room[cp] === P.room[cq]) { if (!((p === V && q === M) || (p === M && q === V))) add('same', { t: 'same', a, b, v: Math.floor(rng() * 3) }); }
     else if (rng() < 0.35) add('diff', { t: 'diff', a, b, v: Math.floor(rng() * 2) });
-    if (Math.abs(((cp / n) | 0) - ((cq / n) | 0)) === 1 && Math.abs((cp % n) - (cq % n)) === 1 && !((p === V && q === M) || (p === M && q === V))) add('diag', { t: 'diag', a, b });
+    if (P.room[cp] === P.room[cq] && Math.abs(((cp / n) | 0) - ((cq / n) | 0)) === 1 && Math.abs((cp % n) - (cq % n)) === 1 && !((p === V && q === M) || (p === M && q === V))) add('diag', { t: 'diag', a, b });
     if (rng() < 0.25) { const [x, y] = ((cp / n) | 0) < ((cq / n) | 0) ? [p, q] : [q, p]; add('north', { t: 'north', a: x, b: y }); }
     if (rng() < 0.25) { const [x, y] = cp % n < cq % n ? [p, q] : [q, p]; add('west', { t: 'west', a: x, b: y }); }
   }

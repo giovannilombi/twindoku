@@ -161,7 +161,11 @@ button, .cell { touch-action: manipulation; -webkit-tap-highlight-color: transpa
 
 .bar { flex: none; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .status { flex: 1 1 260px; min-height: 40px; padding: 8px 12px; border-radius: 12px; background: var(--panel-2); font-weight: 700; font-size: 14px; display: flex; align-items: center; }
-.status.ok { background: #1f4a37; color: #d9ffe9; }
+.status.ok { background: #1f4a37; color: #d9ffe9; flex-wrap: wrap; gap: 8px; }
+.status.ok > span { flex: 1 1 auto; }
+.status .cta { padding: 7px 12px; font-size: 13.5px; }
+.status .cta.primary { animation: nudge 1.6s ease-in-out infinite; }
+@keyframes nudge { 0%, 100% { transform: none; } 50% { transform: scale(1.05); } }
 .status.ko { background: #5a2a36; color: #ffe1e4; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
