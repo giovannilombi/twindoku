@@ -467,7 +467,7 @@ $('#status').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'accuse') openAccuse();
   else if (b.dataset.act === 'win') openWin();
-  else if (b.dataset.act === 'nextu') { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }
+  else if (b.dataset.act === 'nextu') loadAll().then(() => { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); });
 });
 $('#undoBtn').addEventListener('click', undo);
 $('#hintBtn').addEventListener('click', hint);
@@ -490,7 +490,7 @@ $('#brand').addEventListener('click', e => { e.preventDefault(); openArchive(); 
 $('#overlay').addEventListener('click', e => {
   const t = e.target;
   if (t.id === 'overlay' || t.closest('[data-close]')) return closeModal();
-  if (t.closest('[data-nextu]')) { closeModal(); const nu = nextUnsolved(S.id); return nu ? openCase(nu) : openArchive(); }
+  if (t.closest('[data-nextu]')) { closeModal(); return loadAll().then(() => { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }); }
   if (t.closest('[data-archive]')) return openArchive();
   const sz = t.closest('[data-size]'); if (sz) return openArchive(+sz.dataset.size);
   const op = t.closest('[data-open]'); if (op) { closeModal(); return openCase(op.dataset.open); }
@@ -507,8 +507,9 @@ const fromHash = () => { const m = location.hash.match(/^#caso-(\d{1,2}-\d{1,3})
 addEventListener('hashchange', () => { const id = fromHash(); if (id && (!S || id !== S.id)) openCase(id); });
 
 (async () => {
+  setStatus('Apro il fascicolo del caso…');
   await loadIndex();
-  await loadAll();
   await openCase(fromHash() || store.get('gq2:last', null) || '5-1');
+  loadAll(); // il resto dell'archivio si carica in sottofondo
   if (!store.get('gq2:seenRules', false)) openRules();
 })();
