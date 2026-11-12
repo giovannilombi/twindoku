@@ -1,6 +1,6 @@
 {
-  "name": "Giallo a Quadretti",
-  "short_name": "Giallo",
+  "name": "Twindoku: Cold Case",
+  "short_name": "Twindoku",
   "description": "Gioco di logica investigativo: trova chi era solo con la vittima.",
   "start_url": "./",
   "scope": "./",

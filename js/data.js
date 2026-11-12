@@ -1,5 +1,5 @@
 // Dati del gioco: mobili, ambientazioni, personaggi.
-// Tutto originale: nomi, storie e mappe sono inventati per Giallo a Quadretti.
+// Tutto originale: nomi, storie e mappe sono inventati per Twindoku: Cold Case.
 
 const oa = g => (g === 'f' ? 'a' : 'o');
 

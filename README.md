@@ -1,8 +1,8 @@
-# Giallo a Quadretti
+# Twindoku: Cold Case
 
 Gioco di logica investigativo per ragazzi, in italiano. Su ogni mappa c'è un delitto: bisogna piazzare ogni persona nella casella giusta seguendo gli indizi e scoprire chi era solo con la vittima.
 
-**Gioca:** https://giovannilombi.github.io/murdoku/
+**Gioca:** https://giovannilombi.github.io/twindoku/
 
 ## Regole
 

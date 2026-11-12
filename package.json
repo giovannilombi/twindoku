@@ -1,5 +1,5 @@
 {
-  "name": "giallo-a-quadretti",
+  "name": "twindoku",
   "private": true,
   "type": "module",
   "scripts": {

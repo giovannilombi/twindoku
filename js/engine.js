@@ -1,4 +1,4 @@
-// Motore di Giallo a Quadretti: valutazione degli indizi, risolutore e generatore di casi.
+// Motore di Twindoku: Cold Case: valutazione degli indizi, risolutore e generatore di casi.
 // Usato dal browser (valutazione indizi) e da Node (tools/build-cases.js per pre-generare i casi).
 import { ITEMS, SCENARIOS, NAMES, COLORS } from './data.js';
 

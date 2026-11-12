@@ -73,7 +73,7 @@ async function openCase(id) {
   }
   store.set('gq2:last', id);
   if (location.hash.slice(1) !== `caso-${id}`) { try { history.replaceState(null, '', `#caso-${id}`); } catch (e) { /* ok */ } }
-  document.title = `${P.sc.title} · Giallo a Quadretti`;
+  document.title = `${P.sc.title} · Twindoku: Cold Case`;
   renderAll();
   if (S.solved && S.accused) setStatus(solvedMsg(), 'ok');
   else if (S.solved) setStatus(ACCUSE_MSG, 'ok');
