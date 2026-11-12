@@ -87,7 +87,7 @@ Backtracking che conta le soluzioni fino a `limit` (di solito 2: "unica" = 1). R
 
 ## 7. Archivio (`tools/build-cases.js`)
 
-- Quantità per dimensione: `PER_SIZE` (oggi 5×5: 20, 6–9: 50, 10: 100, 11–14: 50 → 520 casi).
+- Quantità per dimensione: `PER_SIZE` (oggi 5×5: 20, 6–9: 50, 10: 365, 11–14: 50 → 785 casi).
 - Semi deterministici: seme = 1, 2, 3… per dimensione; i casi con mappa uguale a una già presa vengono saltati.
   **Cambiare qualsiasi regola o l'ordine delle chiamate a `rng()` cambia i casi generati.**
 - Ordinamento dal più facile al più difficile: nodi del risolutore ÷ numero di indizi.

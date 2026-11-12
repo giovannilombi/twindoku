@@ -12,7 +12,7 @@ Gioco di logica investigativo per ragazzi, in italiano. Su ogni mappa c'è un de
 
 ## Contenuto
 
-- 520 casi, da 5×5 a 14×14 (100 da 10×10, la misura del caso del giorno), ordinati dal più semplice al più difficile in ogni dimensione.
+- 785 casi, da 5×5 a 14×14 (365 da 10×10: uno per ogni giorno dell'anno come caso del giorno), ordinati dal più semplice al più difficile in ogni dimensione.
 - 6 ambientazioni con storie, personaggi e stanze proprie: Casa di famiglia, Il castello sul lago, Il museo a mezzanotte, Crociera da brivido, Campeggio al Lago Scuro, Delitto a cinque stelle.
 - Ogni caso ha una sola soluzione (verificata dal risolutore).
 - **Detective e squadre**: ognuno crea il suo detective (soprannome + PIN, niente email), i progressi si salvano sul server
