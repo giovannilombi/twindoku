@@ -1,6 +1,7 @@
 import { ITEMS, ICONS, SCENARIOS, TIERS, SIZES } from './data.js';
 import { hydrate, evalClue } from './engine.js';
 import { starsOf } from './gamify.js';
+import { face } from './faces.js';
 import * as acc from './account.js';
 import { initProfile } from './profile.js';
 
@@ -13,7 +14,8 @@ const oa = g => (g === 'f' ? 'a' : 'o');
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const NUM = ['zero', 'una', 'due', 'tre', 'quattro', 'cinque', 'sei'];
 const svg = (t, cls = '') => `<svg class="${cls}" viewBox="0 0 40 40" aria-hidden="true">${ICONS[t]}</svg>`;
-const where = () => (matchMedia('(max-width: 1080px)').matches ? 'qui sotto' : 'a destra');
+const phone = matchMedia('(max-width: 900px)'); // sotto questa larghezza: due schede (Mappa | Indizi)
+const where = () => (phone.matches ? 'qui sotto' : 'a destra');
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /* ---------------- archivio ---------------- */
@@ -59,7 +61,8 @@ function nextUnsolved(fromId) {
 
 /* ---------------- stato ---------------- */
 let S = null;
-const helpersOn = () => store.get('gq2:helpers', true);
+const helpersOn = () => store.get('gq3:helpers', false);
+const isOpen = k => store.get(`gq3:${k}`, true); // fascicolo e legenda aperti o richiusi
 const saveKey = () => acc.ns(`case:${S.key}`);
 function save() {
   store.set(saveKey(), { place: S.place, marks: [...S.marks], hints: S.hints, elapsed: S.elapsed, solved: S.solved, accused: S.accused, struck: [...S.struck] });
@@ -71,7 +74,7 @@ async function openCase(id) {
   let C;
   try { C = await loadCase(id); } catch (e) { setStatus("Non riesco a caricare il caso. Controlla la connessione e ricarica la pagina.", 'ko'); return; }
   const P = hydrate(C);
-  S = { id, key: C.key, n, idx: i, P, place: new Array(P.n).fill(-1), marks: new Set(), sel: null, mode: 'place', hist: [], hints: 0, elapsed: 0, solved: false, struck: new Set(), hintCell: -1, resetArm: false, accused: false };
+  S = { id, key: C.key, n, idx: i, P, place: new Array(P.n).fill(-1), marks: new Set(), sel: null, mode: 'place', hist: [], hints: 0, elapsed: 0, solved: false, struck: new Set(), hintCell: -1, resetArm: false, accused: false, focus: null, moved: -1 };
   const saved = store.get(saveKey(), null);
   if (saved && Array.isArray(saved.place) && saved.place.length === P.n) {
     Object.assign(S, { place: saved.place, marks: new Set(saved.marks || []), hints: saved.hints || 0, elapsed: saved.elapsed || 0, solved: !!saved.solved, accused: !!saved.accused, struck: new Set(saved.struck || []) });
@@ -146,7 +149,7 @@ function fill(tpl, P) {
 }
 
 /* ---------------- render ---------------- */
-function renderAll() { renderStory(); renderBoard(); renderTray(); renderClues(); renderLegend(); renderTools(); renderMeta(); }
+function renderAll() { renderStory(); renderBoard(); renderTray(); renderClues(); renderLegend(); renderTools(); renderMeta(); fitCast(); }
 function renderMeta() {
   $('#timer').textContent = fmt(S.elapsed);
   $('#hintsUsed').textContent = S.hints;
@@ -156,13 +159,11 @@ function renderMeta() {
   $('#nextCase').disabled = k < 0 || k >= all.length - 1;
 }
 function renderStory() {
-  const P = S.P, sc = P.sc;
-  const el = $('#story');
+  const P = S.P, sc = P.sc, el = $('#story'), open = isOpen('storyOpen');
   el.style.setProperty('--sc', sc.color);
-  el.innerHTML = `<div class="eyebrow"><b>Caso ${S.n}×${S.n} n° ${S.idx}</b><span>${TIERS[S.n]}</span><span>${sc.place}</span>${solvedSet().has(S.key) ? '<span class="solvedtag">✓ Risolto</span>' : ''}</div>
-    <h1>${sc.title}</h1>
-    <p class="intro">${fill(sc.intros[P.story.intro], P)}</p><span class="more">Leggi tutta la storia ▾</span>
-    <p class="weapon">Accanto alla vittima: <b>${sc.weapons[P.story.weapon]}</b>.</p>`;
+  el.classList.toggle('shut', !open);
+  el.innerHTML = `<button type="button" class="acc" aria-expanded="${open}" aria-controls="storyBody"><span><span class="eyebrow"><b>Caso ${S.n}×${S.n} n° ${S.idx}</b><span>${TIERS[S.n]}</span><span>${sc.place}</span>${solvedSet().has(S.key) ? '<span class="solvedtag">✓ Risolto</span>' : ''}</span><h1>${sc.title}</h1></span><span class="chev" aria-hidden="true">▼</span></button>
+    <div class="body" id="storyBody"><p class="intro">${fill(sc.intros[P.story.intro], P)}</p><p class="weapon">Accanto alla vittima: <b>${sc.weapons[P.story.weapon]}</b>.</p></div>`;
 }
 function conflicts() {
   const n = S.P.n, bad = new Set();
@@ -194,6 +195,11 @@ function renderBoard() {
   const P = S.P, n = P.n, b = $('#board'), help = helpersOn();
   b.style.setProperty('--n', n);
   b.classList.toggle('done', S.solved);
+  // lente su un indizio: si accendono la stanza e gli oggetti di cui parla (non la casella giusta)
+  const fc = S.focus != null && !S.solved ? P.clues[S.focus] : null;
+  b.classList.toggle('focusing', !!fc);
+  const f = k => fc && fc.p && fc.p.find(x => x.k === k);
+  const fRoom = fc ? (f('room') ? f('room').r : fc.r != null ? fc.r : null) : null, fNot = f('notroom'), fIt = f('on') || f('near');
   const crimeRoom = S.solved && S.accused ? P.room[P.sol[P.n - 1]] : -1;
   const rowOcc = new Array(n).fill(false), colOcc = new Array(n).fill(false);
   S.place.forEach(c => { if (c >= 0) { rowOcc[(c / n) | 0] = true; colOcc[c % n] = true; } });
@@ -201,58 +207,107 @@ function renderBoard() {
   let h = '';
   for (let c = 0; c < n * n; c++) {
     const r = (c / n) | 0, k = c % n, rm = P.room[c], D = P.roomDefs[rm], it = P.items[c], occ = S.place.indexOf(c), w = P.wall[c];
-    const cls = ['cell', 'p-' + D.pat];
+    const cls = ['cell'];
     if (w & 1) cls.push('wt'); if (w & 2) cls.push('wr'); if (w & 4) cls.push('wb'); if (w & 8) cls.push('wl');
     if (it) { cls.push(ITEMS[it].block ? 'blocked' : 'stand'); if (it === 'tappeto') cls.push('rug'); }
-    if (help && !S.solved && occ < 0 && (rowOcc[r] || colOcc[k])) cls.push('shade');
+    if (labels[c]) cls.push('haslab');
+    const shaded = help && !S.solved && occ < 0 && (rowOcc[r] || colOcc[k]);
+    if (shaded) cls.push('shade');
+    if (S.sel != null && !S.solved && S.mode === 'place' && occ < 0 && !P.blocked[c] && !shaded && !S.marks.has(c)) cls.push('free');
+    if (occ >= 0) cls.push('occ');
     if (S.hintCell === c) cls.push('hint');
     if (rm === crimeRoom) cls.push('crime');
     if (S.sel != null && occ === S.sel) cls.push('focus');
+    if (fc) {
+      if (fRoom != null ? rm === fRoom : fNot ? rm !== fNot.r : true) cls.push('lit');
+      if (fNot && rm === fNot.r && !P.blocked[c]) cls.push('ban');
+      if (fIt && it === fIt.it && (fRoom == null || rm === fRoom)) cls.push('itlit', 'lit');
+      if (occ >= 0 && (occ === fc.a || occ === fc.b)) cls.push('lit');
+    }
     let inner = '';
     if (it) inner += svg(it, 'it');
     const wm = P.winAt[c];
     if (wm & 1) inner += '<i class="win t"></i>'; if (wm & 2) inner += '<i class="win r"></i>';
     if (wm & 4) inner += '<i class="win b"></i>'; if (wm & 8) inner += '<i class="win l"></i>';
     if (labels[c]) inner += `<span class="rlab" style="--span:${labels[c].span}"><span>${D.name}</span></span>`;
-    if (occ >= 0) { const p = P.persons[occ]; inner += `<span class="tok${p.victim ? ' vic' : ''}${bad.has(occ) ? ' bad' : ''}" style="--c:${p.color}">${p.init}</span>`; }
+    if (occ >= 0) { const p = P.persons[occ]; inner += `<span class="tok${p.victim ? ' vic' : ''}${bad.has(occ) ? ' bad' : ''}" style="--c:${p.color}${S.moved === occ || bad.has(occ) ? '' : ';animation:none'}"><span class="ph">${face(p)}</span></span><span class="tn${p.victim ? ' vic' : ''}" style="--c:${p.color}">${p.name}</span>`; }
     else if (S.marks.has(c)) inner += '<span class="mark">✕</span>';
-    const lbl = `${D.name}${it ? ', ' + ITEMS[it].label : ''}${occ >= 0 ? ', ' + P.persons[occ].name : ''}`;
-    h += `<button type="button" class="${cls.join(' ')}" style="--floor:${D.floor}" data-c="${c}" data-r="${rm}" title="${lbl}" aria-label="Riga ${r + 1}, colonna ${k + 1}: ${lbl}"></button>`.replace('></button>', `>${inner}</button>`);
+    const lbl = `${D.name}${it ? ', ' + ITEMS[it].label : ''}${occ >= 0 ? ', ' + P.persons[occ].name : ''}${occ < 0 && S.marks.has(c) ? ', segnata con una X' : ''}`;
+    h += `<button type="button" class="${cls.join(' ')}" style="--floor:${D.floor}" data-c="${c}" data-r="${rm}" title="${lbl}" aria-label="Riga ${r + 1}, colonna ${k + 1}: ${lbl}">${inner}</button>`;
   }
-  b.innerHTML = h;
+  b.innerHTML = h; S.moved = -1;
 }
 function renderTray() {
-  const P = S.P;
-  $('#tray').innerHTML = P.persons.map((p, i) => `<button type="button" class="person${S.place[i] >= 0 ? ' placed' : ''}" data-p="${i}" aria-pressed="${S.sel === i}">
-    <span class="mini${p.victim ? ' vic' : ''}" style="--c:${p.color}">${p.init}</span>
-    <span class="nm"><b>${p.name}</b><small>${p.role}</small></span></button>`).join('');
+  const P = S.P, fc = S.focus != null && !S.solved ? P.clues[S.focus] : null;
+  $('#tray').innerHTML = P.persons.map((p, i) => `<button type="button" class="person${S.place[i] >= 0 ? ' placed' : ''}${p.victim ? ' vic' : ''}${fc && (fc.a === i || fc.b === i) ? ' cited' : ''}" data-p="${i}" aria-pressed="${S.sel === i}" style="--c:${p.color}" title="${p.name}, ${p.role}${p.victim ? ' (vittima)' : ''}">
+    <span class="ph">${face(p)}</span><span class="nm"><b>${p.name}</b><small>${p.role}</small></span></button>`).join('');
+  $('#pips').innerHTML = P.persons.map((p, i) => `<i class="${S.place[i] >= 0 ? 'on' : ''}" style="--c:${p.victim ? '#b5283c' : p.color}"></i>`).join('');
+  $('#found').textContent = `${S.place.filter(c => c >= 0).length} su ${P.n} sistemati`;
 }
+// Sceglie colonne e misura delle foto perché le persone stiano tutte nello spazio che c'è:
+// foto con ruolo → foto più piccole → foto mini con il nome accanto → solo nomi.
+function fitCast() {
+  if (!S) return;
+  const el = $('#tray'), N = S.P.n, set = (cls, vars) => { el.className = 'tray ' + cls; for (const k in vars) el.style.setProperty(k, vars[k]); };
+  if (phone.matches) return set('m-dock', { '--k': Math.ceil(N / (N > 7 ? 2 : 1)), '--gap': '4px' });
+  const W = el.clientWidth - 6, H = el.clientHeight - 6, g = 8;
+  if (W < 40 || H < 40) return;
+  let best = null;
+  for (let k = 1; k <= 6; k++) {
+    const rows = Math.ceil(N / k), cw = (W - (k - 1) * g) / k, ch = (H - (rows - 1) * g) / rows;
+    for (const role of [1, 0]) {
+      const pw = Math.floor(Math.min(cw - 14, (ch - (role ? 41 : 27) - 9) * 1.25, 150));
+      if (pw < (role ? 88 : 38)) continue;
+      const score = pw + (role ? 30 : 0);
+      if (!best || score > best.score) best = { k, pw, role, score };
+    }
+  }
+  if (best) return set('m-photo' + (best.role ? ' role' : '') + (best.pw < 70 ? ' tiny' : ''), { '--k': best.k, '--gap': g + 'px', '--cw': best.pw + 10 + 'px', '--phh': Math.round(best.pw * .8) + 'px', '--nf': Math.max(12.5, Math.min(18, best.pw * .2)) + 'px', '--sf': Math.max(8, Math.min(12, best.pw * .11)) + 'px' });
+  for (let k = 1; k <= 4; k++) { const rows = Math.ceil(N / k); if ((W - (k - 1) * 6) / k >= 84 && rows * 34 + (rows - 1) * 6 <= H) return set('m-mini', { '--k': k, '--gap': '6px' }); }
+  for (let k = 2; k <= 5; k++) { const rows = Math.ceil(N / k); if ((W - (k - 1) * 5) / k >= 58 && rows * 25 + (rows - 1) * 5 <= H) return set('m-name', { '--k': k, '--gap': '5px' }); }
+  set('m-name scroll', { '--k': Math.max(2, Math.floor(W / 70)), '--gap': '5px' });
+}
+// Indizi. Tocco = "messo da parte" (S.struck): scende in fondo ma resta leggibile. Con gli aiutini accesi
+// scendono da soli anche quelli rispettati (verdi). Gli indizi della persona scelta si mettono in evidenza.
+let lastSel = null;
 function renderClues(force) {
-  const P = S.P, help = helpersOn() || force;
+  const P = S.P;
   $('#helpers').checked = helpersOn();
-  // ordina: prima per persona (come nella lista a destra), poi gli indizi sulle stanze
-  const order = P.clues.map((cl, i) => ({ cl, i, key: cl.a != null ? cl.a : 99 })).sort((x, y) => x.key - y.key || x.i - y.i);
-  $('#clues').innerHTML = order.map(({ cl, i }) => {
-    const v = help ? evalClue(cl, S.place, P) : null;
-    const st = v === true ? 'yes' : v === false ? 'no' : '';
-    return `<li tabindex="0" data-i="${i}" class="${st}${S.struck.has(i) ? ' struck' : ''}"><span class="ic">${v === true ? '✓' : v === false ? '!' : '?'}</span><span class="tx">${clueHTML(cl)}</span></li>`;
-  }).join('');
+  // aiutini spenti: niente colori, tranne quando la mappa è piena e sbagliata
+  const show = helpersOn() || force || (!S.solved && S.place.every(c => c >= 0));
+  // ordina: prima per persona (come nella lista delle persone), poi gli indizi sulle stanze
+  const rows = P.clues.map((cl, i) => ({ cl, i, key: cl.a != null ? cl.a : 99 })).sort((x, y) => x.key - y.key || x.i - y.i)
+    .map(r => { const v = show ? evalClue(r.cl, S.place, P) : null, aside = S.struck.has(r.i); return { ...r, v, aside, done: aside || (helpersOn() && v === true), mine: S.sel != null && (r.cl.a === S.sel || r.cl.b === S.sel) }; });
+  const sp = S.sel != null ? P.persons[S.sel] : null, pc = sp ? (sp.victim ? '#b5283c' : sp.color) : '';
+  const li = ({ cl, i, v, aside, done, mine }) => `<li tabindex="0" data-i="${i}" class="clue${v === true ? ' yes' : v === false ? ' no' : ''}${aside ? ' aside' : ''}${done ? ' done' : ''}${S.focus === i ? ' focus' : ''}${mine ? ' mine' : sp ? ' dim' : ''}"${mine ? ` style="--pc:${pc}"` : ''}><span class="pin" aria-hidden="true"></span><span class="tx">${clueHTML(cl)}</span><button type="button" class="look" data-look="${i}" aria-pressed="${S.focus === i}" aria-label="Mostra sulla mappa di cosa parla" title="Mostra sulla mappa">🔍</button></li>`;
+  const open = rows.filter(r => !r.done), done = rows.filter(r => r.done);
+  $('#clues').innerHTML = open.map(li).join('') + (done.length ? `<li class="sep" aria-hidden="true"><span>Già a posto · ${done.length}</span></li>` + done.map(li).join('') : '');
+  $('#clueCount').textContent = open.length ? `${open.length} da sistemare su ${P.clues.length}` : `tutti e ${P.clues.length} a posto`;
+  $('#viewCount').textContent = sp ? `${rows.filter(r => r.mine).length} su ${sp.name}` : open.length ? `${open.length} da sistemare` : 'tutti a posto';
+  if (S.sel !== lastSel) { lastSel = S.sel; const m = $('#clues .mine'); if (m && !phone.matches) m.scrollIntoView({ block: 'nearest' }); }
+}
+function focusClue(i) {
+  if (S.solved) return;
+  S.focus = S.focus === i ? null : i;
+  renderBoard(); renderTray(); renderClues();
+  setStatus(S.focus != null ? 'Sulla mappa è acceso quello di cui parla questo indizio. Scegli tu chi piazzare.' : `Scegli una persona ${where()}, poi tocca la casella dove si trovava.`);
+  if (S.focus != null && phone.matches) setView('map');
 }
 function renderLegend() {
-  const P = S.P, used = [...new Set(P.items.filter(Boolean))];
+  const P = S.P, used = [...new Set(P.items.filter(Boolean))], open = isOpen('legendOpen'), el = $('#legend');
   const block = used.filter(t => ITEMS[t].block), stand = used.filter(t => !ITEMS[t].block);
   const li = t => `<li>${svg(t)}${ITEMS[t].label}</li>`;
-  $('#legend').innerHTML =
-    `<h3>Qui ci si può stare</h3><ul>${stand.map(li).join('')}</ul>` +
-    `<h3>Qui no: mobili e ostacoli</h3><ul>${block.map(li).join('')}</ul>` +
-    `<h3>Altro</h3><ul>${P.win.length ? '<li><span class="wsw"></span>Finestra</li>' : ''}<li><span class="nsw">↑ N</span>Nord è in alto</li></ul>`;
+  el.classList.toggle('shut', !open);
+  el.innerHTML = `<button type="button" class="acc" aria-expanded="${open}" aria-controls="legendBody"><span>Legenda</span><span class="chev" aria-hidden="true">▼</span></button>
+    <div class="body" id="legendBody"><h4>Qui ci si può stare</h4><ul>${stand.map(li).join('')}</ul><h4>Qui no: mobili e ostacoli</h4><ul>${block.map(li).join('')}</ul>
+    <h4>Altro</h4><ul>${P.win.length ? '<li><span class="wsw"></span>Finestra</li>' : ''}<li>💫 Vittima</li><li><span class="nsw">↑ N</span>Nord è in alto</li></ul></div>`;
 }
 function renderTools() {
   $('#modePlace').setAttribute('aria-pressed', S.mode === 'place');
   $('#modeMark').setAttribute('aria-pressed', S.mode === 'mark');
   $('#undoBtn').disabled = !S.hist.length || S.solved;
   $('#hintBtn').disabled = S.solved;
-  $('#resetBtn').textContent = S.resetArm ? 'Sicuro? Tocca ancora' : 'Ricomincia';
+  $('#resetBtn').innerHTML = S.resetArm ? 'Sicuro?<span class="lbl"> Tocca ancora</span>' : '⟲<span class="lbl"> Ricomincia</span>';
 }
 const ACCUSE_MSG = '<span>Tutti al posto giusto! Ora tocca a te.</span><button type="button" class="btn primary cta" data-act="accuse">🔎 Indica il colpevole</button>';
 const solvedMsg = () => `<span>✓ Caso risolto! Il colpevole era ${S.P.persons[S.P.murderer].name}.</span><button type="button" class="btn cta" data-act="win">Rivedi il finale</button><button type="button" class="btn primary cta" data-act="nextu">Prossimo caso ›</button>`;
@@ -261,23 +316,29 @@ function refresh() { save(); renderBoard(); renderTray(); renderClues(); renderT
 
 /* ---------------- azioni ---------------- */
 function pushHist() { S.hist.push({ place: [...S.place], marks: [...S.marks] }); if (S.hist.length > 300) S.hist.shift(); }
+// mette una persona in una casella (tocco oppure trascinamento)
+function place(who, c) {
+  const P = S.P;
+  if (P.blocked[c]) { setStatus(`Lì c'è ${ITEMS[P.items[c]].art}: nessuno può starci sopra!`, 'ko'); return; }
+  pushHist();
+  const occ = S.place.indexOf(c);
+  if (occ >= 0 && occ !== who) S.place[occ] = -1;
+  S.place[who] = c; S.marks.delete(c); S.sel = null; S.focus = null; S.moved = who; S.hintCell = -1;
+  afterMove(`${P.persons[who].name} era ${P.roomDefs[P.room[c]].in}.`);
+}
 function onCell(c) {
   if (S.solved) { S.accused ? openWin() : openAccuse(); return; }
   const P = S.P; S.hintCell = -1;
-  if (P.blocked[c]) { setStatus(`Lì c'è ${ITEMS[P.items[c]].art}: nessuno può starci sopra!`, 'ko'); return; }
   const occ = S.place.indexOf(c);
   if (S.mode === 'mark') {
+    // la ✕ si può mettere ovunque, anche su mobili e ostacoli
     if (occ >= 0) { setStatus('Qui c\'è già una persona. Per spostarla usa “Metti persona”.'); return; }
     pushHist(); S.marks.has(c) ? S.marks.delete(c) : S.marks.add(c);
     save(); renderBoard(); renderTools(); return;
   }
-  if (S.sel != null) {
-    pushHist();
-    if (occ >= 0 && occ !== S.sel) S.place[occ] = -1;
-    S.place[S.sel] = c; S.marks.delete(c);
-    const who = S.sel; S.sel = null;
-    afterMove(`${P.persons[who].name} era ${P.roomDefs[P.room[c]].in}.`);
-  } else if (occ >= 0) {
+  if (S.sel != null) { place(S.sel, c); return; }
+  if (P.blocked[c]) { setStatus(`Lì c'è ${ITEMS[P.items[c]].art}: nessuno può starci sopra!`, 'ko'); return; }
+  if (occ >= 0) {
     pushHist(); S.place[occ] = -1; S.sel = occ;
     afterMove(`Hai preso ${P.persons[occ].name}: tocca la nuova casella.`);
   } else {
@@ -285,7 +346,7 @@ function onCell(c) {
     if (bl.length) {
       bl.forEach(({ x }) => board.querySelector(`.cell[data-c="${x}"]`)?.classList.add('blocker'));
       setStatus(`Questa casella è bloccata da ${bl.map(({ p }) => chip(p)).join(' e ')}: sono già nella stessa riga o colonna.`);
-    } else setStatus(`Prima scegli una persona ${where()}, poi tocca la casella.`);
+    } else setStatus(`Prima scegli una persona ${where()}, poi tocca la casella. Oppure trascinala sulla mappa.`);
   }
 }
 function afterMove(msg) {
@@ -294,7 +355,7 @@ function afterMove(msg) {
   if (S.place.every(c => c >= 0)) {
     if (conflicts().size) { setStatus('Due persone sono nella stessa riga o colonna: ce ne può essere una sola!', 'ko'); return; }
     if (S.place.every((c, i) => c === P.sol[i])) {
-      S.solved = true; S.marks = new Set(); save(); renderTools(); renderBoard();
+      S.solved = true; S.marks = new Set(); S.focus = null; save(); renderTools(); renderBoard(); renderClues();
       setStatus(ACCUSE_MSG, 'ok');
       setTimeout(openAccuse, 350); return;
     }
@@ -309,7 +370,7 @@ function afterMove(msg) {
 }
 function undo() {
   if (!S.hist.length || S.solved) return;
-  const h = S.hist.pop(); S.place = h.place; S.marks = new Set(h.marks); S.sel = null; S.hintCell = -1;
+  const h = S.hist.pop(); S.place = h.place; S.marks = new Set(h.marks); S.sel = null; S.focus = null; S.hintCell = -1;
   refresh(); setStatus('Mossa annullata.');
 }
 function hint() {
@@ -325,14 +386,14 @@ function hint() {
     free.sort((a, b) => deg(b) - deg(a));
     p = free[0]; const c = P.sol[p];
     const occ = S.place.indexOf(c); if (occ >= 0) S.place[occ] = -1;
-    S.place[p] = c; S.marks.delete(c); S.hintCell = c;
+    S.place[p] = c; S.marks.delete(c); S.hintCell = c; S.moved = p;
     msg = `Aiuto: ${P.persons[p].name} era qui, ${P.roomDefs[P.room[c]].in}.`;
   }
-  S.hints++; S.sel = null; afterMove(msg);
+  S.hints++; S.sel = null; S.focus = null; afterMove(msg);
 }
 function reset() {
   if (!S.resetArm) { S.resetArm = true; renderTools(); setTimeout(() => { if (S) { S.resetArm = false; renderTools(); } }, 3000); return; }
-  Object.assign(S, { resetArm: false, place: new Array(S.P.n).fill(-1), marks: new Set(), sel: null, hist: [], hints: 0, elapsed: 0, solved: false, accused: false, struck: new Set(), hintCell: -1 });
+  Object.assign(S, { resetArm: false, place: new Array(S.P.n).fill(-1), marks: new Set(), sel: null, hist: [], hints: 0, elapsed: 0, solved: false, accused: false, struck: new Set(), hintCell: -1, focus: null });
   save(); renderAll(); setStatus('Si ricomincia da capo. Buona indagine!');
 }
 function step(d) {
@@ -378,14 +439,15 @@ function openRules() {
   <p>È successo un delitto! Sulla mappa vedi le stanze, i mobili e le finestre. Devi scoprire <b>dove si trovava ogni persona</b>, vittima compresa, usando gli indizi.</p>
   <ol>
     <li>In ogni <b>riga</b> e in ogni <b>colonna</b> della mappa c'è <b>una sola persona</b>.</li>
-    <li>Nessuno può stare su tavoli, armadi, piante e altri mobili pesanti. Su sedie, poltrone, divani, letti, tappeti e panche invece sì (la legenda a destra ti dice cosa è cosa).</li>
+    <li>Nessuno può stare su tavoli, armadi, piante e altri mobili pesanti. Su sedie, poltrone, divani, letti, tappeti e panche invece sì (la legenda ti dice cosa è cosa).</li>
     <li><b>Accanto</b> vuol dire nella casella vicina (sopra, sotto, a destra o a sinistra) <b>nella stessa stanza</b>: se c'è un muro in mezzo non vale. <b>In diagonale</b> vuol dire nella stessa stanza, in due caselle che si toccano con un angolo.</li>
     <li><b>In un angolo</b> della stanza vuol dire che la casella tocca due muri che formano un angolo. <b>Al centro</b> vuol dire che non tocca nessun muro.</li>
     <li><b>Vicino a una finestra</b>: la casella ha una finestra azzurra su un lato. <b>Nord</b> è in alto sulla mappa, <b>ovest</b> a sinistra.</li>
     <li>Il <b>colpevole</b> è l'unica persona che si trovava nella stessa stanza della vittima.</li>
   </ol>
-  <p><b>Come muoverti:</b> tocca una persona nella lista, poi la casella. Per spostarla, toccala sulla mappa. Con <b>Segna ✕</b> segni le caselle dove sei sicuro che non c'è nessuno.</p>
-  <p><b>Aiutini</b> accesi: righe e colonne già occupate si riempiono di righine e gli indizi diventano verdi o rossi. Per una sfida vera, spegnili!</p>
+  <p><b>Come muoverti:</b> tocca una persona, poi la casella; oppure trascinala sulla mappa. Per spostarla, toccala o trascinala di nuovo. Con <b>Segna ✕</b> segni le caselle dove sei sicuro che non c'è nessuno (anche sopra i mobili).</p>
+  <p><b>Indizi:</b> quando scegli una persona, i suoi indizi si mettono in evidenza. Tocca un indizio per <b>metterlo da parte</b> quando l'hai usato (va in fondo, lo ritocchi e torna su). La lente 🔍 accende sulla mappa la stanza e gli oggetti di cui parla.</p>
+  <p><b>Aiutini</b>: se li accendi, righe e colonne già occupate si riempiono di righine e gli indizi diventano verdi o rossi. Per una sfida vera, lasciali spenti!</p>
   <div class="row"><button type="button" class="btn primary" data-close data-focus>Inizia a indagare</button><button type="button" class="btn" data-archive>Scegli un caso</button></div>`);
   store.set('gq2:seenRules', true);
 }
@@ -422,9 +484,10 @@ async function openArchive(n) {
 }
 function openAccuse() {
   const P = S.P;
-  openModal(`<div class="big" aria-hidden="true">🔎</div><h2>Chi è il colpevole?</h2>
+  openModal(`<h2>Chi è il colpevole?</h2>
   <p id="accuseMsg">Hai trovato dove si trovavano tutti. Guarda la mappa: chi era nella stessa stanza di ${chip(P.n - 1)}?</p>
-  <div class="accuse">${P.persons.slice(0, -1).map((p, i) => `<button type="button" class="person" data-accuse="${i}"><span class="mini" style="--c:${p.color}">${p.init}</span><span class="nm"><b>${p.name}</b><small>${p.role}</small></span></button>`).join('')}</div>`, true);
+  <div class="lineup">${P.persons.slice(0, -1).map((p, i) => `<button type="button" data-accuse="${i}"><span class="ph" style="--c:${p.color}">${face(p)}</span><b>${p.name}</b><small>${p.role}</small></button>`).join('')}</div>
+  <div class="row"><button type="button" class="btn" data-close>Guarda ancora la mappa</button></div>`, true);
 }
 function accuse(i) {
   const P = S.P;
@@ -443,10 +506,10 @@ function accuse(i) {
 function openWin() {
   const P = S.P, sc = P.sc, M = P.murderer, V = P.n - 1, D = P.roomDefs[P.room[P.sol[V]]];
   const stars = S.hints === 0 ? '★★★' : S.hints <= 2 ? '★★☆' : '★☆☆';
-  openModal(`<div class="big" aria-hidden="true">🏆</div><h2>Caso risolto!</h2>
+  openModal(`<div class="verdict"><span class="ph" style="--c:${P.persons[M].color}">${face(P.persons[M])}</span><span class="bigstamp">Caso chiuso</span></div>
   <p>È stat${oa(P.persons[M].g)} ${chip(M)}, ${P.persons[M].role}! Era ${D.in}, da sol${oa(P.persons[M].g)} con ${chip(V)}.</p>
   <p>${fill(sc.epilogues[P.story.epi], P)}</p>
-  <p style="font-size:28px;color:var(--accent);letter-spacing:4px;margin:4px 0">${stars}</p>
+  <p class="stars-big">${stars}</p>
   <p class="progress" style="margin:0">Tempo ${fmt(S.elapsed)} · Aiuti usati: ${S.hints} · <b>+${S.n * starsOf(S.hints)} punti</b>${acc.active() ? '' : ' (crea un detective per tenerli!)'}</p>
   <div id="winExtra"></div>
   <div class="row"><button type="button" class="btn primary" data-nextu data-focus>Prossimo da risolvere ›</button><button type="button" class="btn" data-archive>Archivio</button><button type="button" class="btn ghost" data-close>Guarda la mappa</button></div>`);
@@ -469,7 +532,7 @@ function confetti() {
 
 /* ---------------- eventi ---------------- */
 const board = $('#board');
-board.addEventListener('click', e => { const c = e.target.closest('.cell'); if (c) onCell(+c.dataset.c); });
+board.addEventListener('click', e => { if (swallow) return; const c = e.target.closest('.cell'); if (c) onCell(+c.dataset.c); });
 board.addEventListener('mouseover', e => {
   const c = e.target.closest('.cell'); if (!c) return;
   const r = c.dataset.r;
@@ -491,19 +554,29 @@ board.addEventListener('mouseover', e => {
 });
 board.addEventListener('mouseleave', () => { board.querySelectorAll('.cell.blocker').forEach(x => x.classList.remove('blocker')); board.dataset.hl = ''; board.querySelectorAll('.cell.hl').forEach(x => x.classList.remove('hl')); });
 $('#tray').addEventListener('click', e => {
-  const b = e.target.closest('.person'); if (!b || S.solved) return;
-  const i = +b.dataset.p; S.mode = 'place'; S.hintCell = -1;
+  const b = e.target.closest('.person'); if (!b || S.solved || swallow) return;
+  const i = +b.dataset.p; S.mode = 'place'; S.hintCell = -1; S.focus = null;
   S.sel = S.sel === i ? null : i;
-  renderTray(); renderTools(); renderBoard();
+  renderTray(); renderTools(); renderBoard(); renderClues();
   const p = S.P.persons[i];
   if (S.sel != null) setStatus(`Dove si trovava ${p.name}? Tocca una casella.${S.place[i] >= 0 ? ` (È già sulla mappa: verrà spostat${oa(p.g)}.)` : ''}`);
   else setStatus(`Scegli una persona ${where()}, poi tocca la casella dove si trovava.`);
 });
-$('#clues').addEventListener('click', e => { const li = e.target.closest('li'); if (!li) return; const i = +li.dataset.i; S.struck.has(i) ? S.struck.delete(i) : S.struck.add(i); save(); renderClues(); });
-$('#clues').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.target.closest('li')?.click(); } });
-$('#helpers').addEventListener('change', e => { store.set('gq2:helpers', e.target.checked); renderBoard(); renderClues(); });
-$('#modePlace').addEventListener('click', () => { S.mode = 'place'; renderTools(); });
-$('#modeMark').addEventListener('click', () => { S.mode = 'mark'; S.sel = null; renderTools(); renderTray(); setStatus('Modalità ✕: tocca le caselle dove sei sicuro che non ci sia nessuno.'); });
+$('#clues').addEventListener('click', e => {
+  const lk = e.target.closest('[data-look]'); if (lk) return focusClue(+lk.dataset.look);
+  const li = e.target.closest('.clue'); if (!li) return;
+  const i = +li.dataset.i;
+  if (S.struck.has(i)) { S.struck.delete(i); setStatus('Indizio ripreso: è tornato tra quelli da sistemare.'); }
+  else { S.struck.add(i); if (S.focus === i) S.focus = null; setStatus('Indizio messo da parte: lo trovi in fondo. Toccalo ancora per riprenderlo.'); }
+  save(); renderClues(); renderBoard(); renderTray();
+});
+$('#clues').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.clue')) { e.preventDefault(); e.target.click(); } });
+$('#helpers').addEventListener('change', e => {
+  store.set('gq3:helpers', e.target.checked); renderBoard(); renderClues();
+  if (!S.solved) setStatus(e.target.checked ? 'Aiutini accesi: righe e colonne occupate rigate, indizi verdi o rossi.' : 'Aiutini spenti: nessun colore sugli indizi, decidi tu quali mettere da parte.');
+});
+$('#modePlace').addEventListener('click', () => { S.mode = 'place'; renderTools(); renderBoard(); });
+$('#modeMark').addEventListener('click', () => { S.mode = 'mark'; S.sel = null; S.focus = null; renderTools(); renderTray(); renderBoard(); renderClues(); setStatus('Modalità ✕: tocca le caselle dove sei sicuro che non ci sia nessuno. Puoi segnare anche mobili e ostacoli.'); });
 $('#status').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'accuse') openAccuse();
@@ -518,7 +591,66 @@ $('#creditsBtn').addEventListener('click', openCredits);
 $('#archiveBtn').addEventListener('click', () => openArchive(S ? S.n : 5));
 $('#prevCase').addEventListener('click', () => step(-1));
 $('#nextCase').addEventListener('click', () => step(1));
-$('#story').addEventListener('click', () => $('#story').classList.toggle('open'));
+// fascicolo e legenda richiudibili: chiudendo la legenda le foto delle persone si allargano
+$('#story').addEventListener('click', e => { if (!e.target.closest('.acc')) return; store.set('gq3:storyOpen', !isOpen('storyOpen')); renderStory(); });
+$('#legend').addEventListener('click', e => { if (!e.target.closest('.acc')) return; store.set('gq3:legendOpen', !isOpen('legendOpen')); renderLegend(); fitCast(); });
+new ResizeObserver(() => fitCast()).observe($('#tray'));
+phone.addEventListener('change', fitCast);
+
+/* ---------------- trascinamento ---------------- */
+// Una persona si può anche trascinare: dalla lista alla mappa, da una casella all'altra, o fuori dalla mappa per toglierla.
+let dg = null, ghost = null, swallow = false;
+const cellAt = e => { const el = document.elementFromPoint(e.clientX, e.clientY); const c = el && el.closest('#board .cell'); return c ? +c.dataset.c : null; };
+function endDrag() { if (ghost) ghost.remove(); ghost = null; document.body.classList.remove('dragging'); board.querySelectorAll('.over').forEach(x => x.classList.remove('over')); }
+$('#layout').addEventListener('pointerdown', e => {
+  if (!S || S.solved || S.mode !== 'place' || (e.button != null && e.button > 0)) return;
+  const pe = e.target.closest('#tray .person'), ce = e.target.closest('#board .cell'); let p = null;
+  if (pe) p = +pe.dataset.p; else if (ce) { const o = S.place.indexOf(+ce.dataset.c); if (o >= 0) p = o; }
+  if (p != null) dg = { p, x: e.clientX, y: e.clientY, on: false, id: e.pointerId };
+});
+addEventListener('pointermove', e => {
+  if (!dg || e.pointerId !== dg.id) return;
+  if (!dg.on) {
+    if (Math.hypot(e.clientX - dg.x, e.clientY - dg.y) < 8) return;
+    dg.on = true; document.body.classList.add('dragging');
+    const p = S.P.persons[dg.p];
+    ghost = document.createElement('span'); ghost.className = 'tok dragtok' + (p.victim ? ' vic' : ''); ghost.style.setProperty('--c', p.color); ghost.innerHTML = `<span class="ph">${face(p)}</span>`; document.body.appendChild(ghost);
+  }
+  ghost.style.transform = `translate(${e.clientX - 34}px, ${e.clientY - 34}px)`;
+  const c = cellAt(e); board.querySelectorAll('.over').forEach(x => x.classList.remove('over'));
+  if (c != null) board.querySelector(`.cell[data-c="${c}"]`).classList.add('over');
+});
+addEventListener('pointerup', e => {
+  if (!dg || e.pointerId !== dg.id) return; const d = dg; dg = null; if (!d.on) return;
+  endDrag(); swallow = true; setTimeout(() => (swallow = false), 0);
+  const c = cellAt(e), P = S.P;
+  if (c != null) { if (S.place[d.p] !== c) place(d.p, c); }
+  else if (S.place[d.p] >= 0) { pushHist(); S.place[d.p] = -1; S.sel = null; afterMove(`${P.persons[d.p].name} è tornat${oa(P.persons[d.p].g)} nella lista.`); }
+});
+addEventListener('pointercancel', () => { dg = null; endDrag(); });
+
+/* ---------------- telefono: due schede, si cambia con uno swipe ---------------- */
+function setView(v) {
+  const L = $('#layout'); if (L.dataset.view === v) return;
+  L.dataset.view = v;
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v));
+  const cls = v === 'clues' ? 'go-l' : 'go-r';
+  L.classList.remove('go-l', 'go-r'); void L.offsetWidth; L.classList.add(cls);
+  setTimeout(() => L.classList.remove(cls), 260);
+  fitCast();
+}
+document.querySelector('.views').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
+let sw = null;
+$('#layout').addEventListener('touchstart', e => {
+  sw = null;
+  // lo swipe non parte da una persona o da una casella occupata: lì il dito serve a trascinare
+  if (!phone.matches || e.touches.length !== 1 || e.target.closest('.person, .cell.occ')) return;
+  sw = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+}, { passive: true });
+$('#layout').addEventListener('touchend', e => {
+  if (!sw) return; const s = sw, p = e.changedTouches[0], dx = p.clientX - s.x, dy = p.clientY - s.y; sw = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && Date.now() - s.t < 700) setView(dx < 0 ? 'clues' : 'map');
+}, { passive: true });
 const fsBtn = $('#fsBtn');
 if (document.fullscreenEnabled) {
   fsBtn.hidden = false;

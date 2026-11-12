@@ -31,11 +31,12 @@ poi indicare il colpevole: l'unica persona che era nella stessa stanza della vit
 
 | Percorso | Cosa contiene |
 | --- | --- |
-| `index.html` | Pagina unica (meta PWA, intestazione, tre colonne: fascicolo, mappa, persone) |
-| `css/style.css` | Tutta la grafica. Token colore in `:root`, tema unico scuro. Media query: `≤1080px` impilato + barra persone fissa; `≤640px` telefono |
+| `index.html` | Pagina unica (meta PWA, intestazione, tre colonne: fascicolo e indizi, mappa, persone e legenda) |
+| `css/style.css` | Tutta la grafica, stile **Bacheca** (sughero, biglietti appuntati, foto segnaletiche). Token in `:root`. Media query: `≤900px` due schede (Mappa \| Indizi); `≤640px` intestazione compatta |
 | `js/data.js` | Contenuti: `ITEMS` (mobili, bloccanti o no, frasi), `ICONS` (SVG vista dall'alto, viewBox 40), `SCENARIOS` (6 ambientazioni), `NAMES`, `COLORS`, `TIERS`, `SIZES` |
 | `js/engine.js` | Motore condiviso browser/Node: `derive`, `predOK`, `evalClue`, `countSolutions` (risolutore), `generateCase`, `hydrate` |
-| `js/app.js` | Interfaccia: caricamento casi, rendering mappa/indizi/persone, mosse, aiuti, accusa, archivio, salvataggi |
+| `js/app.js` | Interfaccia: caricamento casi, rendering mappa/indizi/persone, mosse, trascinamento, aiuti, accusa, archivio, salvataggi, schede del telefono |
+| `js/faces.js` | Facce dei personaggi: SVG generati da nome + ruolo (stessa persona = stessa faccia) |
 | `js/gamify.js` | Punti, gradi, distintivi, serie di giorni, caso del giorno. **Condiviso** con il server (il worker lo importa) |
 | `js/account.js` | Profili sul dispositivo, chiamate al server, coda dei casi risolti offline, import dei casi da ospite |
 | `js/profile.js` | Finestre: chi gioca, nuovo detective, accesso, PIN dimenticato, taccuino, squadre, festeggiamenti |
@@ -69,9 +70,19 @@ dentro la cartella del progetto (`.playwright-mcp/`, ignorata da git).
 - Indirizzo di un caso: `#caso-<n>-<numero>` (es. `#caso-8-3`). Frecce ‹ › = caso precedente/successivo in ordine di archivio.
 - Avvio: carica `cases/index.json` (senza cache), apre il caso (hash → ultimo giocato → `5-1`) scaricando solo quel file.
 - Link d'invito a una squadra: `#squadra-<CODICE>` (6 caratteri).
-- Mossa: tocco persona → tocco casella. Tocco su una persona già piazzata = la riprende. Modalità "Segna ✕" per le note.
-- **Aiutini** (interruttore, default acceso): righe/colonne occupate rigate (mobili compresi); passando sopra una casella
-  rigata si illuminano le persone che la bloccano; indizi verdi/rossi in tempo reale.
+- Mossa: tocco persona → tocco casella, oppure **trascinamento** (dalla lista alla mappa, da una casella all'altra, fuori dalla mappa = la toglie).
+  Tocco su una persona già piazzata = la riprende. Modalità "Segna ✕" per le note: la ✕ si può mettere **ovunque**, anche su mobili e ostacoli.
+- **Indizi**: tocco sul biglietto = "messo da parte" (`S.struck`): scende in fondo sotto «Già a posto» ma resta leggibile (puntina blu), ritocco = torna su.
+  La lente 🔍 accende sulla mappa la stanza e gli oggetti di cui parla (mai la casella giusta). Toccare un indizio **non seleziona mai una persona**.
+  Scegliendo una persona, i suoi indizi si mettono in evidenza (bordo del suo colore) e gli altri si attenuano.
+- **Aiutini** (interruttore, **default spento**, chiave `gq3:helpers`): righe/colonne occupate rigate (mobili compresi); passando sopra una casella
+  rigata si illuminano le persone che la bloccano; puntine verdi/rosse in tempo reale e gli indizi verdi scendono in fondo da soli.
+  Spenti: nessun colore (tornano solo a mappa piena e sbagliata).
+- **Fascicolo** e **legenda** si richiudono a fisarmonica (`gq3:storyOpen`, `gq3:legendOpen`). Le foto delle persone si ridimensionano da sole
+  per stare sempre tutte visibili (`fitCast`: foto con ruolo → foto piccole → foto mini + nome → solo nomi).
+- La **vittima** ha sempre il segno 💫 (foto, pedina, nome negli indizi).
+- **Telefono (≤900px)**: due schede a tutto schermo, «Mappa» (mappa sempre intera + comandi + persone sotto) e «Indizi» (fascicolo, indizi, legenda).
+  Si cambia con uno swipe orizzontale o dalle linguette; lo swipe non parte da una persona o da una casella occupata (lì si trascina).
 - Mappa completa e giusta → popup accusa. Se chiuso, la barra di stato verde mostra **"Indica il colpevole"**.
   Dopo l'accusa: "Rivedi il finale" e "Prossimo caso ›" (= prossimo non risolto).
 - Aiuto 💡: se qualcuno è nel posto sbagliato lo toglie, altrimenti piazza la persona con più indizi. Stelle: 0 aiuti = 3, ≤2 = 2, altrimenti 1.
@@ -100,10 +111,11 @@ dentro la cartella del progetto (`.playwright-mcp/`, ignorata da git).
 
 | Chiave | Contenuto |
 | --- | --- |
-| `gq3:case:<key>` | Stato del caso (piazzamenti, ✕, aiuti, tempo, risolto, accusato, indizi spuntati) |
+| `gq3:case:<key>` | Stato del caso (piazzamenti, ✕, aiuti, tempo, risolto, accusato, indizi messi da parte) |
 | `gq3:solved` | Elenco delle impronte (`key`) dei casi risolti |
 | `gq3:stars` | `{ key: stelle }` |
-| `gq2:helpers`, `gq2:seenRules`, `gq2:last` | Preferenze, regole già viste, ultimo caso aperto (per id) |
+| `gq3:helpers`, `gq3:storyOpen`, `gq3:legendOpen` | Aiutini (default spenti; la vecchia `gq2:helpers` non si legge più), fascicolo e legenda aperti/chiusi |
+| `gq2:seenRules`, `gq2:last` | Regole già viste, ultimo caso aperto (per id) |
 | `tw:profiles`, `tw:active` | Detective su questo dispositivo `[{id, name, avatar, token}]` e quello che sta giocando (`null` = ospite) |
 | `tw:p<id>:case:<key>`, `tw:p<id>:solved`, `tw:p<id>:stars` | Come le `gq3:` ma per ogni detective (le `gq3:` restano dell'ospite) |
 | `tw:p<id>:me`, `tw:p<id>:queue` | Copia dell'ultimo `/api/me`; casi risolti non ancora inviati al server |
@@ -135,3 +147,8 @@ senza una migrazione, altrimenti tutti perdono i progressi. Il prefisso `gq` vie
   (i 410 casi precedenti ci sono tutti; dal 10×10 in su alcuni hanno cambiato numero, i progressi no perché usano l'impronta).
 - **2026-11-12** — 10×10 portati a **365** (archivio 785 casi). Il caso del giorno ora è una rotazione senza ripetizioni per un anno.
 - **2026-11-12** — Caso del giorno deciso dal server: un caso che nessuno risolve torna in rotazione dopo almeno 30 giorni.
+- **2026-11-12** — Nuova grafica **Bacheca** (scelta fra tre proposte: bacheca, centrale operativa, fumetto). Facce al posto delle lettere,
+  trascinamento, indizi "messi da parte" al posto della barratura (che li rendeva illeggibili), lente sugli indizi, indizi della persona
+  scelta in evidenza, fascicolo e legenda richiudibili, foto che si adattano, ✕ ovunque, segno della vittima, telefono a due schede con swipe.
+  **Aiutini spenti di default per tutti** (chiave nuova `gq3:helpers`): Giovanni vuole che i ragazzi ragionino da soli.
+  Prototipo di riferimento: https://claude.ai/artifact/LhqYdzD84F4apD8TqMtCwR
