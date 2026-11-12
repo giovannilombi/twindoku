@@ -210,6 +210,16 @@ button, .cell { touch-action: manipulation; -webkit-tap-highlight-color: transpa
 @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes shake { 0%, 100% { transform: none; } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
 
+/* titoli di coda */
+.credits .stamp { display: inline-block; margin: 0 0 10px; padding: 3px 10px; border: 2px solid #e0645f; color: #e0645f; border-radius: 6px; font-weight: 900; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transform: rotate(-2deg); }
+.credits dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 14px 0; align-items: baseline; }
+.credits dt { color: var(--muted, #b3a7c3); font-size: 13px; font-weight: 700; }
+.credits dd { margin: 0; font-weight: 800; }
+.credits dd small { font-weight: 600; opacity: .75; }
+.credits a { color: var(--accent); word-break: break-word; }
+.credits .lic { font-size: 13px; opacity: .85; }
+@media (max-width: 640px) { .credits dl { grid-template-columns: 1fr; gap: 2px; } .credits dd { margin-bottom: 8px; } }
+
 /* archivio */
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 14px; }
 .tabs button { border: 0; border-radius: 12px; background: var(--panel-2); padding: 8px 12px; cursor: pointer; font-weight: 800; font-size: 13px; text-align: left; line-height: 1.15; }
@@ -300,3 +310,10 @@ button, .cell { touch-action: manipulation; -webkit-tap-highlight-color: transpa
   .tabs button { flex: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* telefoni stretti: intestazione su una riga anche con il pulsante dei titoli di coda */
+@media (max-width: 420px) {
+  .brand { font-size: 15px; }
+  .topnav { gap: 4px; }
+  .topnav .btn { padding: 7px 8px; }
+}

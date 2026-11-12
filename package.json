@@ -1,6 +1,7 @@
 {
   "name": "twindoku",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
     "build-cases": "node tools/build-cases.js",

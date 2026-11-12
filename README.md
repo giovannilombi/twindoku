@@ -47,3 +47,12 @@ Per rigenerare i casi dopo aver modificato storie, stanze o generatore (serve No
 node tools/build-cases.js
 node tools/validate-cases.js
 ```
+
+## Licenza
+
+© 2026 Giovanni Lombi. Uso, modifica e condivisione liberi **solo senza scopo commerciale e citando sempre l'autore**.
+
+- **Codice** (HTML, CSS, JavaScript, strumenti): [PolyForm Noncommercial License 1.0.0](LICENSE)
+- **Contenuti** (storie, personaggi, casi, icone): [Creative Commons Attribuzione - Non commerciale - Condividi allo stesso modo 4.0 Internazionale (CC BY-NC-SA 4.0)](LICENSE-CONTENUTI.md)
+
+Miglioramenti e segnalazioni sono benvenuti: apri una issue o una pull request su GitHub.

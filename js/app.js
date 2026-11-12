@@ -338,6 +338,31 @@ function openModal(html, wide) {
   const f = m.querySelector('[data-focus]') || m.querySelector('button'); f && f.focus();
 }
 function closeModal() { $('#overlay').hidden = true; }
+// L'indirizzo non compare mai intero nel sorgente: viene ricomposto solo quando qualcuno tocca il pulsante.
+const MAIL = ['moc.liamg', 'ibmol.innavoig'];
+function openCredits() {
+  openModal(`<div class="credits">
+    <p class="stamp">Fascicolo n. 001 · Riservato</p>
+    <h2>Twindoku: Cold Case</h2>
+    <dl>
+      <dt>Ideato e scritto da</dt><dd>Giovanni Lombi</dd>
+      <dt>Ispettori collaudatori</dt><dd>Aurora e Alessandro <span aria-label="con affetto">❤️</span><br><small>i primi detective ad aver risolto ogni caso</small></dd>
+      <dt>Contatti</dt><dd id="mailSlot"><button type="button" class="btn" data-mail>✉️ Scrivi all'autore</button></dd>
+      <dt>Codice</dt><dd><a href="https://github.com/giovannilombi/twindoku" target="_blank" rel="noopener">github.com/giovannilombi/twindoku</a></dd>
+    </dl>
+    <p class="lic">Puoi giocare, modificare e condividere Twindoku <b>senza scopo commerciale</b> e <b>citando sempre l'autore</b>.<br>
+    Codice: <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener">PolyForm Noncommercial License 1.0.0</a>.<br>
+    Storie, personaggi, casi e icone: <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it" target="_blank" rel="noopener">Creative Commons Attribuzione - Non commerciale - Condividi allo stesso modo 4.0 Internazionale (CC BY-NC-SA 4.0)</a>.</p>
+    <p class="lic">© 2026 Giovanni Lombi</p>
+    <div class="row"><button type="button" class="btn primary" data-close data-focus>Chiudi il fascicolo</button></div>
+  </div>`);
+}
+function revealMail() {
+  const addr = MAIL.map(x => [...x].reverse().join('')).reverse().join('@');
+  const slot = $('#mailSlot');
+  slot.innerHTML = `<a href="mailto:${addr}?subject=Twindoku">${addr}</a>`;
+  location.href = `mailto:${addr}?subject=Twindoku`;
+}
 function openRules() {
   openModal(`<h2>Come si gioca</h2>
   <p>È successo un delitto! Sulla mappa vedi le stanze, i mobili e le finestre. Devi scoprire <b>dove si trovava ogni persona</b>, vittima compresa, usando gli indizi.</p>
@@ -473,6 +498,7 @@ $('#undoBtn').addEventListener('click', undo);
 $('#hintBtn').addEventListener('click', hint);
 $('#resetBtn').addEventListener('click', reset);
 $('#rulesBtn').addEventListener('click', openRules);
+$('#creditsBtn').addEventListener('click', openCredits);
 $('#archiveBtn').addEventListener('click', () => openArchive(S ? S.n : 5));
 $('#prevCase').addEventListener('click', () => step(-1));
 $('#nextCase').addEventListener('click', () => step(1));
@@ -490,6 +516,7 @@ $('#brand').addEventListener('click', e => { e.preventDefault(); openArchive(); 
 $('#overlay').addEventListener('click', e => {
   const t = e.target;
   if (t.id === 'overlay' || t.closest('[data-close]')) return closeModal();
+  if (t.closest('[data-mail]')) return revealMail();
   if (t.closest('[data-nextu]')) { closeModal(); return loadAll().then(() => { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }); }
   if (t.closest('[data-archive]')) return openArchive();
   const sz = t.closest('[data-size]'); if (sz) return openArchive(+sz.dataset.size);

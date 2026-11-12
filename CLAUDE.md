@@ -91,3 +91,6 @@ senza una migrazione, altrimenti tutti perdono i progressi. Il prefisso `gq` vie
 - **2026-11-12** — "Murdoku" è un marchio registrato: nome cambiato in **Twindoku: Cold Case**, repo rinominato `murdoku` → `twindoku`
   (il vecchio indirizzo Pages dà 404). La cartella locale va rinominata `~/Dev/murdoku` → `~/Dev/twindoku`.
 - **2026-11-12** — Aggiunti questo file, `docs/GENERAZIONE-CASI.md`, `docs/ROADMAP.md`, `tools/validate-cases.js`.
+- **2026-11-12** — Licenza: codice **PolyForm Noncommercial 1.0.0** (`LICENSE`, con riga `Required Notice`), contenuti **CC BY-NC-SA 4.0**
+  (`LICENSE-CONTENUTI.md`). Titoli di coda dal pulsante ⓘ in alto. L'email dell'autore non deve mai comparire in chiaro
+  nei sorgenti: è salvata al contrario in `MAIL` (`js/app.js`) e ricomposta solo al tocco su "Scrivi all'autore".
