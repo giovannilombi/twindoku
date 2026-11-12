@@ -3,7 +3,8 @@ import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { generateCase } from '../js/engine.js';
 import { SIZES } from '../js/data.js';
 
-const PER_SIZE = { 5: 20, 6: 50, 7: 50, 8: 50, 9: 50, 10: 50, 11: 40, 12: 40, 13: 30, 14: 30 };
+// 10×10: 100 casi perché il caso del giorno pesca sempre da lì (così si ripete solo dopo più di tre mesi)
+const PER_SIZE = { 5: 20, 6: 50, 7: 50, 8: 50, 9: 50, 10: 100, 11: 50, 12: 50, 13: 50, 14: 50 };
 // Un file per caso (cases/<n>/<i>.json): il gioco scarica solo il caso che apri.
 // cases/index.json è l'indice leggero: per ogni caso impronta e ambientazione (servono all'archivio e al server).
 rmSync(new URL('../cases/', import.meta.url), { recursive: true, force: true });

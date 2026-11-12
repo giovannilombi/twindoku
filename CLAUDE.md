@@ -87,7 +87,7 @@ dentro la cartella del progetto (`.playwright-mcp/`, ignorata da git).
 - **Squadre**: nome + password. Chi la crea è capitano (rigenera il link d'invito, resetta PIN). Se il capitano esce, passa al più bravo;
   squadra vuota = cancellata. Punteggio di squadra = **media dei 5 migliori**. Si cambia squadra quando si vuole, i punti seguono il detective.
 - **Punti** = stelle × lato della mappa. Gradi, distintivi e serie in `js/gamify.js` (la serie non si azzera se si salta un solo giorno).
-- **Caso del giorno**: uguale per tutti, scelto dalla data (ora italiana) tra i 6×6–8×8.
+- **Caso del giorno**: uguale per tutti, sempre un **10×10** (`DAILY_SIZE` in `js/gamify.js`), scelto dalla data (ora italiana).
 - Sicurezza: PIN/codici/password con PBKDF2 + sale + segreto `PEPPER` del server (**non cambiarlo**: tutti i PIN smetterebbero di funzionare;
   copia locale in `worker/.dev.vars`, ignorato da git). Dopo 5 errori blocco di 15 minuti; max 40 errori l'ora per rete.
 - Piano gratuito Cloudflare: ~100.000 richieste/giorno, D1 5 milioni di letture/giorno. Non va in pausa.
@@ -113,7 +113,7 @@ senza una migrazione, altrimenti tutti perdono i progressi. Il prefisso `gq` vie
 
 - **2026-11-11** — Prima versione (file unico, 4×4–6×6, indizi riga/colonna). Bocciata: troppo banale per 11 anni.
 - **2026-11-11** — Riscrittura: indizi descrittivi (stanza, angolo, accanto, seduto su, finestra…), 6 ambientazioni con storie,
-  griglie fino a 14×14, archivio pre-generato (410 casi), layout in una schermata su desktop.
+  griglie fino a 14×14, archivio pre-generato (410 casi, poi 520), layout in una schermata su desktop.
 - **2026-11-11** — Tutto schermo su desktop, layout telefono con barra persone fissa, PWA installabile, casi risolti persistenti.
 - **2026-11-11** — Bug segnalato: "accanto a una libreria" con un muro in mezzo. Ora "accanto" e "diagonale" valgono solo nella stessa stanza.
   Aggiunto pulsante "Indica il colpevole" nella barra di stato. Progressi legati all'impronta del caso (`gq3:`), non al numero.
@@ -127,3 +127,5 @@ senza una migrazione, altrimenti tutti perdono i progressi. Il prefisso `gq` vie
 - **2026-11-12** — **Detective e squadre** con server Cloudflare Workers + D1 (scelto al posto di Supabase, che mette in pausa i progetti
   gratuiti dopo 7 giorni). Soprannome + PIN, codice segreto di recupero, squadre con password e link d'invito, controllo nomi simili,
   gradi, 16 distintivi, serie di giorni, caso del giorno, classifiche. Archivio diviso in un file per caso.
+- **2026-11-12** — Caso del giorno sempre **10×10**. Archivio portato a 520 casi: 10×10 = 100, 11–14 = 50 ciascuno
+  (i 410 casi precedenti ci sono tutti; dal 10×10 in su alcuni hanno cambiato numero, i progressi no perché usano l'impronta).

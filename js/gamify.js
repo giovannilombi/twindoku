@@ -35,11 +35,12 @@ export function streaks(days, today = romeDay()) {
   return { current, best, playedToday: prev === dayNum(today) };
 }
 
-// Caso del giorno: uguale per tutti, scelto fra i casi da 6×6 a 8×8.
+// Caso del giorno: uguale per tutti, sempre un 10×10 (scelto dalla data).
+export const DAILY_SIZE = 10;
 const fnv = str => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 // cases: elenco [impronta, dimensione, ambientazione, id] in ordine di archivio
 export function dailyCase(cases, day = romeDay()) {
-  const pool = cases.filter(c => c[1] >= 6 && c[1] <= 8);
+  const pool = cases.filter(c => c[1] === DAILY_SIZE);
   return pool.length ? pool[fnv('giorno:' + day) % pool.length] : null;
 }
 
