@@ -27,6 +27,10 @@ Gioco di logica investigativo per ragazzi, in italiano. Su ogni mappa c'è un de
 | `js/data.js` | Ambientazioni, stanze, mobili, personaggi, icone |
 | `cases/*.json` | Archivio dei casi pre-generati |
 | `tools/build-cases.js` | Script che rigenera l'archivio |
+| `tools/validate-cases.js` | Controlla che tutti i casi siano validi |
+| `CLAUDE.md` | Note di progetto e storico delle decisioni (letto da Claude Code a ogni sessione) |
+| `docs/GENERAZIONE-CASI.md` | Regole complete di mappe, indizi e generazione |
+| `docs/ROADMAP.md` | Idee e problemi noti |
 
 ## Sviluppo
 
@@ -41,4 +45,5 @@ Per rigenerare i casi dopo aver modificato storie, stanze o generatore (serve No
 
 ```sh
 node tools/build-cases.js
+node tools/validate-cases.js
 ```
