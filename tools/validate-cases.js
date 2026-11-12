@@ -10,8 +10,9 @@ const keys = new Set();
 let total = 0, errors = 0;
 const fail = (C, msg) => { errors++; console.log(`✗ ${C.id}: ${msg}`); };
 
-for (const { n } of index) {
-  const list = JSON.parse(readFileSync(new URL(`../cases/${n}.json`, import.meta.url)));
+for (const { n, count, cases } of index) {
+  const list = Array.from({ length: count }, (_, i) => JSON.parse(readFileSync(new URL(`../cases/${n}/${i + 1}.json`, import.meta.url))));
+  list.forEach((C, i) => { if (cases[i][0] !== C.key || cases[i][1] !== C.sc) fail(C, 'indice non allineato al file del caso'); });
   for (const C of list) {
     total++;
     const P = hydrate(C);

@@ -1,0 +1,13 @@
+# Server di Twindoku: https://twindoku-api.giovanni-lombi.workers.dev
+# Pubblica:   cd worker && npx wrangler deploy
+# Database:   npx wrangler d1 execute twindoku --remote --file=schema.sql
+# Segreto:    PEPPER (npx wrangler secret put PEPPER) — se si perde, nessuno può più entrare con il PIN: non cambiarlo.
+name = "twindoku-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "twindoku"
+database_id = "1d213131-bde6-44d4-8f79-677ee6aeab94"

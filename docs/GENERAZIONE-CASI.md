@@ -93,6 +93,14 @@ Backtracking che conta le soluzioni fino a `limit` (di solito 2: "unica" = 1). R
 - Ordinamento dal più facile al più difficile: nodi del risolutore ÷ numero di indizi.
 - `id` = `<n>-<posizione>` (cambia se l'ordine cambia); `key` = `<n>.<hash>` di mappa + soluzione + mobili (stabile: i salvataggi usano questo).
 
+### File dell'archivio
+
+- `cases/<n>/<i>.json`: un file per caso (il gioco scarica solo quello che apri).
+- `cases/index.json`: indice leggero, `[{ "n": 8, "count": 50, "cases": [["8.1abc", 3], ...] }]` (impronta e ambientazione di ogni caso,
+  in ordine di archivio). Lo usano l'archivio, "prossimo da risolvere" e il caso del giorno.
+- `worker/src/cases.js`: lo stesso elenco per il server (`[impronta, lato, ambientazione, id]`), generato da `build-cases.js`.
+  **Dopo una rigenerazione va ripubblicato anche il server** (`cd worker && npx wrangler deploy`), altrimenti non riconosce i casi nuovi.
+
 ### Formato di un caso (JSON)
 
 ```json

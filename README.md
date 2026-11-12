@@ -15,7 +15,9 @@ Gioco di logica investigativo per ragazzi, in italiano. Su ogni mappa c'è un de
 - 410 casi, da 5×5 a 14×14, ordinati dal più semplice al più difficile in ogni dimensione.
 - 6 ambientazioni con storie, personaggi e stanze proprie: Casa di famiglia, Il castello sul lago, Il museo a mezzanotte, Crociera da brivido, Campeggio al Lago Scuro, Delitto a cinque stelle.
 - Ogni caso ha una sola soluzione (verificata dal risolutore).
-- I progressi restano salvati nel browser.
+- **Detective e squadre**: ognuno crea il suo detective (soprannome + PIN, niente email), i progressi si salvano sul server
+  e seguono il giocatore su ogni dispositivo. Gradi, distintivi, serie di giorni, caso del giorno, squadre con classifica.
+  Si può anche giocare senza profilo: in quel caso i progressi restano nel browser.
 
 ## Struttura
 
@@ -25,7 +27,10 @@ Gioco di logica investigativo per ragazzi, in italiano. Su ogni mappa c'è un de
 | `js/app.js` | Interfaccia di gioco |
 | `js/engine.js` | Generatore di mappe, indizi e risolutore |
 | `js/data.js` | Ambientazioni, stanze, mobili, personaggi, icone |
-| `cases/*.json` | Archivio dei casi pre-generati |
+| `js/gamify.js` | Gradi, distintivi, serie, caso del giorno (condiviso con il server) |
+| `js/account.js`, `js/profile.js` | Detective, squadre, sincronizzazione e relative finestre |
+| `cases/<n>/<i>.json`, `cases/index.json` | Archivio dei casi pre-generati (un file per caso) e indice |
+| `worker/` | Server (Cloudflare Workers + database D1): API, schema del database, test |
 | `tools/build-cases.js` | Script che rigenera l'archivio |
 | `tools/validate-cases.js` | Controlla che tutti i casi siano validi |
 | `CLAUDE.md` | Note di progetto e storico delle decisioni (letto da Claude Code a ogni sessione) |
@@ -46,7 +51,22 @@ Per rigenerare i casi dopo aver modificato storie, stanze o generatore (serve No
 ```sh
 node tools/build-cases.js
 node tools/validate-cases.js
+cd worker && npx wrangler deploy   # il server deve conoscere i casi nuovi
 ```
+
+### Server (detective, squadre, classifiche)
+
+Cloudflare Workers + D1, piano gratuito, nessun dato personale (solo soprannome, avatar e casi risolti).
+
+```sh
+cd worker
+npx wrangler dev --port 8787             # server locale (usa .dev.vars e un database locale)
+node test-api.js                         # prova completa delle API sul server locale
+npx wrangler deploy                      # pubblica
+```
+
+Per far usare al gioco il server locale: nella console del browser `localStorage.setItem('tw:api', 'http://127.0.0.1:8787')`
+(per tornare a quello vero: `localStorage.removeItem('tw:api')`).
 
 ## Licenza
 

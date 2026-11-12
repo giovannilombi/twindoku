@@ -1,5 +1,8 @@
 import { ITEMS, ICONS, SCENARIOS, TIERS, SIZES } from './data.js';
 import { hydrate, evalClue } from './engine.js';
+import { starsOf, dailyCase, rankOf, BADGES } from './gamify.js';
+import * as acc from './account.js';
+import { initProfile } from './profile.js';
 
 const $ = s => document.querySelector(s);
 const store = {
@@ -14,30 +17,38 @@ const where = () => (matchMedia('(max-width: 1080px)').matches ? 'qui sotto' : '
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /* ---------------- archivio ---------------- */
+// cases/index.json: per ogni dimensione l'elenco [impronta, ambientazione] dei casi. Ogni caso è un file a sé
+// (cases/<n>/<i>.json) e si scarica solo quando lo apri.
 const cache = {};
-async function loadSize(n) {
-  if (!cache[n]) {
-    const res = await fetch(`cases/${n}.json`);
-    if (!res.ok) throw new Error('Archivio non trovato');
-    cache[n] = await res.json();
+async function loadCase(id) {
+  if (!cache[id]) {
+    const [n, i] = id.split('-').map(Number);
+    const res = await fetch(`cases/${n}/${i}.json`);
+    if (!res.ok) throw new Error('Caso non trovato');
+    cache[id] = await res.json();
   }
-  return cache[n];
+  return cache[id];
 }
-let INDEX = SIZES.map(n => ({ n, count: 0 }));
+let INDEX = SIZES.map(n => ({ n, count: 0, cases: [] }));
+let CASES = []; // [impronta, dimensione, ambientazione, id] in ordine di archivio
 async function loadIndex() {
-  try { const r = await fetch('cases/index.json'); if (r.ok) INDEX = await r.json(); } catch (e) { /* uso il default */ }
+  // no-cache: l'indice è piccolo e deve essere sempre quello attuale (dopo una rigenerazione cambia formato e contenuto)
+  try { const r = await fetch('cases/index.json', { cache: 'no-cache' }); if (r.ok) { const x = await r.json(); if (x.every(y => Array.isArray(y.cases))) INDEX = x; } } catch (e) { /* uso il default */ }
+  CASES = INDEX.flatMap(x => x.cases.map(([k, sc], i) => [k, x.n, sc, `${x.n}-${i + 1}`]));
 }
-// I progressi sono legati all'impronta del caso (C.key), non al numero: se l'archivio cambia, non si mescolano.
-const solvedSet = () => new Set(store.get('gq3:solved', []));
-const keyOf = id => { const [n, i] = id.split('-').map(Number); const C = cache[n] && cache[n][i - 1]; return C ? C.key : null; };
-const loadAll = () => Promise.all(INDEX.map(x => loadSize(x.n).catch(() => [])));
-const starsOf = hints => (hints === 0 ? 3 : hints <= 2 ? 2 : 1);
-function markSolved(id, hints) {
-  const solved = store.get('gq3:solved', []);
-  if (!solved.includes(id)) { solved.push(id); store.set('gq3:solved', solved); }
-  const stars = store.get('gq3:stars', {});
-  stars[id] = Math.max(stars[id] || 0, starsOf(hints));
-  store.set('gq3:stars', stars);
+// I progressi sono legati all'impronta del caso (key), non al numero: se l'archivio cambia, non si mescolano.
+// Ogni detective ha i suoi salvataggi (acc.ns): l'ospite usa le chiavi storiche gq3:...
+const solvedSet = () => new Set(store.get(acc.ns('solved'), []));
+const metaOf = id => { const [n, i] = id.split('-').map(Number); const x = INDEX.find(y => y.n === n); return x && x.cases[i - 1] ? { key: x.cases[i - 1][0], sc: x.cases[i - 1][1] } : null; };
+const keyOf = id => { const m = metaOf(id); return m ? m.key : null; };
+function markSolved(key, hints, secs) {
+  const solved = store.get(acc.ns('solved'), []);
+  if (!solved.includes(key)) { solved.push(key); store.set(acc.ns('solved'), solved); }
+  const stars = store.get(acc.ns('stars'), {});
+  stars[key] = Math.max(stars[key] || 0, starsOf(hints));
+  store.set(acc.ns('stars'), stars);
+  if (acc.active()) { acc.queueSolve({ key, hints, secs }); return acc.flush(); }
+  return Promise.resolve(null);
 }
 const allIds = () => INDEX.flatMap(x => Array.from({ length: x.count }, (_, i) => `${x.n}-${i + 1}`));
 function nextUnsolved(fromId) {
@@ -49,17 +60,16 @@ function nextUnsolved(fromId) {
 /* ---------------- stato ---------------- */
 let S = null;
 const helpersOn = () => store.get('gq2:helpers', true);
-const saveKey = () => `gq3:case:${S.key}`;
+const saveKey = () => acc.ns(`case:${S.key}`);
 function save() {
   store.set(saveKey(), { place: S.place, marks: [...S.marks], hints: S.hints, elapsed: S.elapsed, solved: S.solved, accused: S.accused, struck: [...S.struck] });
 }
 
 async function openCase(id) {
   const [n, i] = id.split('-').map(Number);
-  let list;
-  try { list = await loadSize(n); } catch (e) { setStatus("Non riesco a caricare l'archivio. Controlla la connessione e ricarica la pagina.", 'ko'); return; }
-  const C = list[i - 1];
-  if (!C) { openCase('5-1'); return; }
+  if (!metaOf(id)) { if (id !== '5-1') openCase('5-1'); return; }
+  let C;
+  try { C = await loadCase(id); } catch (e) { setStatus("Non riesco a caricare il caso. Controlla la connessione e ricarica la pagina.", 'ko'); return; }
   const P = hydrate(C);
   S = { id, key: C.key, n, idx: i, P, place: new Array(P.n).fill(-1), marks: new Set(), sel: null, mode: 'place', hist: [], hints: 0, elapsed: 0, solved: false, struck: new Set(), hintCell: -1, resetArm: false, accused: false };
   const saved = store.get(saveKey(), null);
@@ -382,28 +392,30 @@ function openRules() {
 let archiveSize = null;
 async function openArchive(n) {
   archiveSize = n || archiveSize || (S ? S.n : 5);
-  const solved = new Set([...solvedSet()].filter(k => INDEX.some(x => (cache[x.n] || []).some(C => C.key === k))));
-  const total = INDEX.reduce((s, x) => s + x.count, 0);
-  let list = [];
-  await loadAll();
-  list = cache[archiveSize] || [];
-  const starMap = store.get('gq3:stars', {});
+  const all = new Set(CASES.map(c => c[0]));
+  const solved = new Set([...solvedSet()].filter(k => all.has(k)));
+  const total = CASES.length;
+  const list = (INDEX.find(x => x.n === archiveSize) || { cases: [] }).cases;
+  const starMap = store.get(acc.ns('stars'), {});
   const nu = nextUnsolved(S ? S.id : null);
+  const daily = dailyCase(CASES);
   const tabs = INDEX.map(x => {
-    const done = (cache[x.n] || []).filter(C => solved.has(C.key)).length;
+    const done = x.cases.filter(([k]) => solved.has(k)).length;
     return `<button type="button" data-size="${x.n}" aria-pressed="${x.n === archiveSize}">${x.n}×${x.n}<small>${TIERS[x.n]} · ${done}/${x.count}</small></button>`;
   }).join('');
-  const cards = list.map((C, i) => {
-    const id = `${archiveSize}-${i + 1}`, sc = SCENARIOS[C.sc];
-    const st = store.get(`gq3:case:${C.key}`, null);
-    const state = solved.has(C.key) ? 'solved' : st && st.place && st.place.some(c => c >= 0) ? 'started' : '';
-    return `<button type="button" class="casebtn ${state}${S && S.id === id ? ' current' : ''}" data-open="${id}" style="--sc:${sc.color}">
-      <span class="st">${state === 'solved' ? '✓' : state === 'started' ? '● in corso' : ''}</span>
-      <b>N° ${i + 1}</b><small>${sc.title}</small>${state === 'solved' ? `<span class="stars">${'★'.repeat(starMap[C.key] || 1)}${'☆'.repeat(3 - (starMap[C.key] || 1))}</span>` : ''}</button>`;
+  const cards = list.map(([key, scI], i) => {
+    const id = `${archiveSize}-${i + 1}`, sc = SCENARIOS[scI];
+    const st = store.get(acc.ns(`case:${key}`), null);
+    const state = solved.has(key) ? 'solved' : st && st.place && st.place.some(c => c >= 0) ? 'started' : '';
+    return `<button type="button" class="casebtn ${state}${S && S.id === id ? ' current' : ''}${daily && daily[0] === key ? ' daily' : ''}" data-open="${id}" style="--sc:${sc.color}">
+      <span class="st">${state === 'solved' ? '✓' : state === 'started' ? '● in corso' : daily && daily[0] === key ? '📅 oggi' : ''}</span>
+      <b>N° ${i + 1}</b><small>${sc.title}</small>${state === 'solved' ? `<span class="stars">${'★'.repeat(starMap[key] || 1)}${'☆'.repeat(3 - (starMap[key] || 1))}</span>` : ''}</button>`;
   }).join('');
+  const dId = daily && daily[3], dDone = daily && solved.has(daily[0]);
   openModal(`<h2>Archivio dei casi</h2>
     <p class="progress">Hai risolto <b>${solved.size}</b> ${solved.size === 1 ? 'caso' : 'casi'} su <b>${total}</b>. Più è grande la mappa, più è difficile. In ogni gruppo i casi vanno dal più semplice al più tosto.</p>
-    <div class="row" style="margin:0 0 4px">${nu ? `<button type="button" class="btn primary" data-open="${nu}">▶ Prossimo da risolvere (${nu.replace('-', '×' + nu.split('-')[0] + ' n° ')})</button>` : '<b>Hai risolto tutti i casi. Sei un vero Maestro del giallo!</b>'}</div>
+    <div class="row" style="margin:0 0 4px">${nu ? `<button type="button" class="btn primary" data-open="${nu}">▶ Prossimo da risolvere (${nu.replace('-', '×' + nu.split('-')[0] + ' n° ')})</button>` : '<b>Hai risolto tutti i casi. Sei un vero Maestro del giallo!</b>'}
+    ${dId ? `<button type="button" class="btn${dDone ? '' : ' daily-btn'}" data-open="${dId}">📅 Caso del giorno (${dId.replace('-', '×' + dId.split('-')[0] + ' n° ')})${dDone ? ' ✓' : ''}</button>` : ''}</div>
     <div class="tabs">${tabs}</div><div class="cases">${cards}</div>
     <div class="row"><button type="button" class="btn" data-close>Chiudi</button></div>`, true);
 }
@@ -416,10 +428,12 @@ function openAccuse() {
 function accuse(i) {
   const P = S.P;
   if (i === P.murderer) {
-    markSolved(S.key, S.hints);
+    const before = acc.meCache();
+    const sync = markSolved(S.key, S.hints, S.elapsed);
     S.accused = true; save(); renderBoard();
     setStatus(solvedMsg(), 'ok');
     renderStory(); openWin(); confetti();
+    sync.then(res => { if (res) profile.celebrate(res, before); });
   } else {
     const m = $('#modal'); m.classList.remove('shake'); void m.offsetWidth; m.classList.add('shake');
     $('#accuseMsg').innerHTML = `No! ${chip(i)} era ${P.roomDefs[P.room[P.sol[i]]].in}, non con ${chip(P.n - 1)}. Guarda meglio la stanza della vittima.`;
@@ -432,7 +446,8 @@ function openWin() {
   <p>È stat${oa(P.persons[M].g)} ${chip(M)}, ${P.persons[M].role}! Era ${D.in}, da sol${oa(P.persons[M].g)} con ${chip(V)}.</p>
   <p>${fill(sc.epilogues[P.story.epi], P)}</p>
   <p style="font-size:28px;color:var(--accent);letter-spacing:4px;margin:4px 0">${stars}</p>
-  <p class="progress" style="margin:0">Tempo ${fmt(S.elapsed)} · Aiuti usati: ${S.hints}</p>
+  <p class="progress" style="margin:0">Tempo ${fmt(S.elapsed)} · Aiuti usati: ${S.hints} · <b>+${S.n * starsOf(S.hints)} punti</b>${acc.active() ? '' : ' (crea un detective per tenerli!)'}</p>
+  <div id="winExtra"></div>
   <div class="row"><button type="button" class="btn primary" data-nextu data-focus>Prossimo da risolvere ›</button><button type="button" class="btn" data-archive>Archivio</button><button type="button" class="btn ghost" data-close>Guarda la mappa</button></div>`);
 }
 
@@ -492,7 +507,7 @@ $('#status').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'accuse') openAccuse();
   else if (b.dataset.act === 'win') openWin();
-  else if (b.dataset.act === 'nextu') loadAll().then(() => { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); });
+  else if (b.dataset.act === 'nextu') { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }
 });
 $('#undoBtn').addEventListener('click', undo);
 $('#hintBtn').addEventListener('click', hint);
@@ -517,7 +532,7 @@ $('#overlay').addEventListener('click', e => {
   const t = e.target;
   if (t.id === 'overlay' || t.closest('[data-close]')) return closeModal();
   if (t.closest('[data-mail]')) return revealMail();
-  if (t.closest('[data-nextu]')) { closeModal(); return loadAll().then(() => { const nu = nextUnsolved(S.id); nu ? openCase(nu) : openArchive(); }); }
+  if (t.closest('[data-nextu]')) { closeModal(); const nu = nextUnsolved(S.id); return nu ? openCase(nu) : openArchive(); }
   if (t.closest('[data-archive]')) return openArchive();
   const sz = t.closest('[data-size]'); if (sz) return openArchive(+sz.dataset.size);
   const op = t.closest('[data-open]'); if (op) { closeModal(); return openCase(op.dataset.open); }
@@ -531,12 +546,26 @@ setInterval(() => {
   if (S && !S.solved && !document.hidden && $('#overlay').hidden) { S.elapsed++; $('#timer').textContent = fmt(S.elapsed); if (S.elapsed % 5 === 0) save(); }
 }, 1000);
 const fromHash = () => { const m = location.hash.match(/^#caso-(\d{1,2}-\d{1,3})$/); return m ? m[1] : null; };
-addEventListener('hashchange', () => { const id = fromHash(); if (id && (!S || id !== S.id)) openCase(id); });
+// link d'invito: #squadra-K7P2QX
+const inviteFromHash = () => { const m = location.hash.match(/^#squadra-([A-Za-z2-9]{6})$/); return m ? m[1].toUpperCase() : null; };
+addEventListener('hashchange', () => {
+  const inv = inviteFromHash(); if (inv) { acc.setPendingInvite(inv); if (S) history.replaceState(null, '', `#caso-${S.id}`); profile.handleInvite(); return; }
+  const id = fromHash(); if (id && (!S || id !== S.id)) openCase(id);
+});
+
+const profile = initProfile({
+  openModal, closeModal, setStatus,
+  cases: () => CASES,
+  // cambio di detective: si riapre il caso con i suoi salvataggi
+  reload: () => { if (S) openCase(S.id); },
+});
 
 (async () => {
   setStatus('Apro il fascicolo del caso…');
+  const inv = inviteFromHash();
+  if (inv) acc.setPendingInvite(inv);
   await loadIndex();
   await openCase(fromHash() || store.get('gq2:last', null) || '5-1');
-  loadAll(); // il resto dell'archivio si carica in sottofondo
-  if (!store.get('gq2:seenRules', false)) openRules();
+  profile.start(); // aggiorna il detective dal server, invia i casi risolti offline, gestisce gli inviti
+  if (!store.get('gq2:seenRules', false) && !inv) openRules();
 })();
