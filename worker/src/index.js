@@ -1,9 +1,13 @@
 // Server di Twindoku (Cloudflare Worker + database D1).
 // Gestisce detective (soprannome + PIN), squadre, progressi e classifiche. Nessun dato personale.
 import { CASES } from './cases.js';
-import { starsOf, pointsOf, statsOf, badgesOf, dailyCase, romeDay, rankOf } from '../../js/gamify.js';
+import { starsOf, statsOf, badgesOf, dailyOrder, DAILY_GAP, dayNum, romeDay as realDay, rankOf } from '../../js/gamify.js';
 
 const CASE = new Map(CASES.map(c => [c[0], c]));
+const ORDER = dailyOrder(CASES);
+// Solo in locale (.dev.vars: ALLOW_TEST_DAY=1) i test possono fingere un altro giorno con l'intestazione X-Test-Day.
+let testDay = null;
+const romeDay = () => testDay || realDay();
 const AVATARS = ['🕵️', '🦊', '🐱', '🦉', '🐶', '🐼', '🦁', '🐸', '🐙', '🦄', '🐧', '🐢', '🐺', '🐯', '🐨', '🦝'];
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -134,6 +138,41 @@ async function auth(env, req) {
   return p;
 }
 
+/* ---------------- caso del giorno ---------------- */
+// Alla prima richiesta del giorno si sceglie il caso e lo si scrive nella tabella daily: da lì in poi è quello per tutti.
+// Scelta: il primo caso della rotazione mai risolto come caso del giorno e non proposto negli ultimi DAILY_GAP giorni.
+// Così i casi che nessuno ha fatto tornano più avanti, invece di andare sprecati.
+const dailyMemo = new Map(); // giorno → caso, per non rileggere il database a ogni richiesta
+async function todayDaily(env) {
+  const day = romeDay();
+  if (dailyMemo.has(day)) return dailyMemo.get(day);
+  let row = await env.DB.prepare('SELECT key FROM daily WHERE day = ?').bind(day).first();
+  if (!row || !CASE.has(row.key)) {
+    const pick = await pickDaily(env, day);
+    if (!pick) return null;
+    await env.DB.prepare('INSERT OR IGNORE INTO daily (day, key) VALUES (?, ?)').bind(day, pick[0]).run();
+    row = await env.DB.prepare('SELECT key FROM daily WHERE day = ?').bind(day).first(); // se due richieste arrivano insieme vince la prima
+  }
+  const c = CASE.get(row.key) || null;
+  if (dailyMemo.size > 10) dailyMemo.clear();
+  dailyMemo.set(day, c);
+  return c;
+}
+async function pickDaily(env, day) {
+  if (!ORDER.length) return null;
+  const hist = (await env.DB.prepare('SELECT day, key, solved FROM daily WHERE day < ?').bind(day).all()).results;
+  const solved = new Set(), last = new Map();
+  for (const h of hist) {
+    if (h.solved > 0) solved.add(h.key);
+    if (!last.has(h.key) || h.day > last.get(h.key)) last.set(h.key, h.day);
+  }
+  const today = dayNum(day), recent = k => last.has(k) && today - dayNum(last.get(k)) < DAILY_GAP;
+  return ORDER.find(c => !solved.has(c[0]) && !recent(c[0]))
+    || ORDER.find(c => !solved.has(c[0]))
+    // tutti risolti almeno una volta: si riparte da quello proposto meno di recente
+    || [...ORDER].sort((a, b) => (last.get(a[0]) || '').localeCompare(last.get(b[0]) || ''))[0];
+}
+
 /* ---------------- progressi e statistiche ---------------- */
 async function playerRows(env, id) {
   return (await env.DB.prepare('SELECT key, n, sc, stars, hints, secs, day, daily FROM progress WHERE player_id = ?').bind(id).all()).results;
@@ -145,7 +184,7 @@ async function teamInfo(env, p) {
   const t = await env.DB.prepare('SELECT * FROM teams WHERE id = ?').bind(p.team_id).first();
   if (!t) return null;
   const members = (await env.DB.prepare('SELECT id, name, avatar, points, solved, last_seen FROM players WHERE team_id = ? ORDER BY points DESC, solved DESC, name').bind(t.id).all()).results;
-  const daily = dailyCase(CASES);
+  const daily = await todayDaily(env);
   const dmap = new Map();
   if (daily && members.length) {
     const rows = (await env.DB.prepare(`SELECT player_id, stars, secs FROM progress WHERE key = ? AND player_id IN (${members.map(() => '?').join(',')})`).bind(daily[0], ...members.map(m => m.id)).all()).results;
@@ -161,13 +200,13 @@ async function teamInfo(env, p) {
 const teamScore = pts => { const top = [...pts].sort((a, b) => b - a).slice(0, 5); return top.length ? Math.round(top.reduce((s, x) => s + x, 0) / top.length) : 0; };
 
 async function me(env, p) {
-  const rows = await playerRows(env, p.id), st = statsFor(rows, p), daily = dailyCase(CASES);
+  const rows = await playerRows(env, p.id), st = statsFor(rows, p), daily = await todayDaily(env);
   return {
     player: { id: p.id, name: p.name, avatar: p.avatar, mustChange: !!p.must_change },
     solved: rows.map(r => [r.key, r.stars]),
     stats: { ...st, rank: rankOf(st.points) },
     badges: badgesOf(st),
-    daily: daily ? { key: daily[0], id: daily[3] } : null,
+    daily: daily ? { day: romeDay(), key: daily[0], id: daily[3] } : null,
     team: await teamInfo(env, p),
   };
 }
@@ -175,7 +214,7 @@ async function me(env, p) {
 async function saveProgress(env, p, items, imported) {
   if (!Array.isArray(items) || items.length > 500) throw new Oops('Dati non validi.');
   const before = badgesOf(statsFor(await playerRows(env, p.id), p));
-  const today = romeDay(), daily = dailyCase(CASES), t = now();
+  const today = romeDay(), daily = await todayDaily(env), t = now();
   const stmts = [];
   for (const it of items) {
     const c = it && CASE.get(it.key);
@@ -186,6 +225,8 @@ async function saveProgress(env, p, items, imported) {
       ON CONFLICT(player_id, key) DO UPDATE SET hints = MIN(hints, ?6), stars = MAX(stars, ?5), secs = CASE WHEN secs = 0 THEN ?7 WHEN ?7 = 0 THEN secs ELSE MIN(secs, ?7) END`)
       .bind(p.id, c[0], c[1], c[2], starsOf(hints), hints, secs, today, isDaily, t));
   }
+  // il caso del giorno è stato risolto da qualcuno: non tornerà più in rotazione (finché non li ha fatti tutti)
+  if (daily && items.some(it => it && it.key === daily[0]) && !imported) stmts.push(env.DB.prepare('UPDATE daily SET solved = solved + 1 WHERE day = ?').bind(today));
   if (stmts.length) {
     stmts.push(env.DB.prepare(`UPDATE players SET points = (SELECT COALESCE(SUM(n * stars), 0) FROM progress WHERE player_id = ?1),
       solved = (SELECT COUNT(*) FROM progress WHERE player_id = ?1), last_seen = ?2 WHERE id = ?1`).bind(p.id, t));
@@ -223,6 +264,9 @@ async function joinTeam(env, p, t) {
 /* ---------------- rotte ---------------- */
 const routes = {
   'GET /api/ping': async () => ({ ok: true, day: romeDay() }),
+
+  // caso del giorno, anche per chi gioca senza detective
+  'GET /api/daily': async env => { const d = await todayDaily(env); return d ? { day: romeDay(), key: d[0], id: d[3] } : { day: romeDay(), key: null, id: null }; },
 
   // controllo "dal vivo" mentre si scrive il nome
   'GET /api/name': async (env, req, url) => {
@@ -376,6 +420,7 @@ export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req) });
     const url = new URL(req.url), fn = routes[`${req.method} ${url.pathname}`];
+    testDay = env.ALLOW_TEST_DAY === '1' && /^\d{4}-\d\d-\d\d$/.test(req.headers.get('X-Test-Day') || '') ? req.headers.get('X-Test-Day') : null;
     if (!fn) return json(req, { error: 'Pagina non trovata.' }, 404);
     try {
       let body = {};

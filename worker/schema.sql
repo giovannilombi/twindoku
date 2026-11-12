@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS progress (
 );
 CREATE INDEX IF NOT EXISTS progress_key_day ON progress(key, day);
 
+-- Caso del giorno: quale caso è stato proposto ogni giorno e quanti detective l'hanno risolto quel giorno.
+-- I casi mai risolti tornano in rotazione (vedi pickDaily in src/index.js).
+CREATE TABLE IF NOT EXISTS daily (
+  day    TEXT PRIMARY KEY,               -- 'AAAA-MM-GG', ora italiana
+  key    TEXT NOT NULL,
+  solved INTEGER NOT NULL DEFAULT 0
+);
+
 -- Tentativi sbagliati (PIN, password di squadra, codice di recupero), per bloccare chi prova a indovinare.
 CREATE TABLE IF NOT EXISTS attempts (
   k       TEXT PRIMARY KEY,

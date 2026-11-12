@@ -1,6 +1,6 @@
 import { ITEMS, ICONS, SCENARIOS, TIERS, SIZES } from './data.js';
 import { hydrate, evalClue } from './engine.js';
-import { starsOf, dailyCase, rankOf, BADGES } from './gamify.js';
+import { starsOf } from './gamify.js';
 import * as acc from './account.js';
 import { initProfile } from './profile.js';
 
@@ -398,7 +398,8 @@ async function openArchive(n) {
   const list = (INDEX.find(x => x.n === archiveSize) || { cases: [] }).cases;
   const starMap = store.get(acc.ns('stars'), {});
   const nu = nextUnsolved(S ? S.id : null);
-  const daily = dailyCase(CASES);
+  const dd = acc.dailyToday() || await acc.fetchDaily();
+  const daily = dd && metaOf(dd.id) && metaOf(dd.id).key === dd.key ? [dd.key, 0, 0, dd.id] : null;
   const tabs = INDEX.map(x => {
     const done = x.cases.filter(([k]) => solved.has(k)).length;
     return `<button type="button" data-size="${x.n}" aria-pressed="${x.n === archiveSize}">${x.n}×${x.n}<small>${TIERS[x.n]} · ${done}/${x.count}</small></button>`;
@@ -567,5 +568,6 @@ const profile = initProfile({
   await loadIndex();
   await openCase(fromHash() || store.get('gq2:last', null) || '5-1');
   profile.start(); // aggiorna il detective dal server, invia i casi risolti offline, gestisce gli inviti
+  acc.fetchDaily();
   if (!store.get('gq2:seenRules', false) && !inv) openRules();
 })();

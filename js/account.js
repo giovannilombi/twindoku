@@ -2,6 +2,8 @@
 // Sul dispositivo possono esserci più detective: si sceglie chi gioca, come i profili di una TV.
 // Senza profilo si gioca lo stesso ("ospite"): i progressi restano solo su questo dispositivo.
 
+import { romeDay } from './gamify.js';
+
 export const API = (() => {
   try { const o = localStorage.getItem('tw:api'); if (o) return o; } catch (e) { /* ok */ }
   return 'https://twindoku-api.giovanni-lombi.workers.dev';
@@ -60,6 +62,7 @@ function applyMe(me) {
   const a = profiles().find(x => x.id === me.player.id);
   if (a) upsertProfile({ ...a, name: me.player.name, avatar: me.player.avatar });
   set(`tw:p${me.player.id}:me`, me);
+  if (me.daily && me.daily.key) set('tw:daily', me.daily);
   // casi risolti e stelle nello stesso formato dell'ospite, così il resto del gioco non cambia
   const solved = new Set(get(`tw:p${me.player.id}:solved`, [])), stars = get(`tw:p${me.player.id}:stars`, {});
   for (const [k, s] of me.solved) { solved.add(k); stars[k] = Math.max(stars[k] || 0, s); }
@@ -127,6 +130,18 @@ export async function importGuest() {
 }
 export const guestImportOffered = () => get('gq2:imported', false);
 export const markImportOffered = () => set('gq2:imported', true);
+
+/* ---------------- caso del giorno ---------------- */
+// Lo decide il server (così i casi che nessuno risolve tornano più avanti). Copia locale: tw:daily = { day, key, id }.
+export function dailyToday() {
+  const d = get('tw:daily', null);
+  return d && d.key && d.day === romeDay() ? d : null;
+}
+export async function fetchDaily() {
+  if (dailyToday()) return dailyToday();
+  try { const d = await api('GET', '/api/daily'); if (d && d.key) set('tw:daily', d); } catch (e) { /* offline: niente caso del giorno */ }
+  return dailyToday();
+}
 
 /* ---------------- inviti ---------------- */
 export const pendingInvite = () => get('tw:invite', null);

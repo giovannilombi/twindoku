@@ -22,7 +22,7 @@ export function rankOf(points) {
 
 // Giorno di calendario in Italia, 'AAAA-MM-GG'.
 export const romeDay = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(d);
-const dayNum = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5;
+export const dayNum = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5;
 
 // Serie di giorni con almeno un caso risolto. Saltare UN giorno non la azzera (la serie "va in pausa"),
 // saltarne due di fila sì. Restituisce la serie attuale (ancora viva se l'ultimo giorno giocato è oggi,
@@ -39,12 +39,11 @@ export function streaks(days, today = romeDay()) {
 export const DAILY_SIZE = 10;
 const fnv = str => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 // cases: elenco [impronta, dimensione, ambientazione, id] in ordine di archivio
-// Rotazione: i casi 10×10 sono mescolati in un ordine fisso (dato dalla loro impronta) e se ne prende uno al giorno,
-// così con 365 casi non se ne ripete nessuno per un anno intero.
-export function dailyCase(cases, day = romeDay()) {
-  const pool = cases.filter(c => c[1] === DAILY_SIZE).sort((a, b) => fnv('g:' + a[0]) - fnv('g:' + b[0]) || (a[0] < b[0] ? -1 : 1));
-  return pool.length ? pool[((dayNum(day) % pool.length) + pool.length) % pool.length] : null;
-}
+// Ordine fisso dei casi del giorno: i 10×10 mescolati dalla loro impronta.
+// Quale caso esce davvero lo decide il server (worker/src/index.js, pickDaily): il primo di quest'ordine che nessuno
+// ha ancora risolto come caso del giorno. Un caso che nessuno risolve torna dopo almeno DAILY_GAP giorni.
+export const DAILY_GAP = 30;
+export const dailyOrder = cases => cases.filter(c => c[1] === DAILY_SIZE).sort((a, b) => fnv('g:' + a[0]) - fnv('g:' + b[0]) || (a[0] < b[0] ? -1 : 1));
 
 // rows: casi risolti { n, sc, hints, secs, day, daily }
 export function statsOf(rows, extra = {}) {

@@ -87,8 +87,11 @@ dentro la cartella del progetto (`.playwright-mcp/`, ignorata da git).
 - **Squadre**: nome + password. Chi la crea è capitano (rigenera il link d'invito, resetta PIN). Se il capitano esce, passa al più bravo;
   squadra vuota = cancellata. Punteggio di squadra = **media dei 5 migliori**. Si cambia squadra quando si vuole, i punti seguono il detective.
 - **Punti** = stelle × lato della mappa. Gradi, distintivi e serie in `js/gamify.js` (la serie non si azzera se si salta un solo giorno).
-- **Caso del giorno**: uguale per tutti, sempre un **10×10** (`DAILY_SIZE` in `js/gamify.js`). Rotazione: i 365 casi 10×10 in un ordine
-  fisso mescolato dall'impronta, uno al giorno (ora italiana) → nessuna ripetizione per un anno. Aggiungere casi 10×10 cambia la rotazione.
+- **Caso del giorno**: uguale per tutti, sempre un **10×10** (`DAILY_SIZE` in `js/gamify.js`). Lo decide il **server** alla prima
+  richiesta del giorno (ora italiana) e lo scrive nella tabella `daily`: è il primo caso di `dailyOrder` (10×10 in ordine fisso
+  mescolato dall'impronta) **mai risolto come caso del giorno** e non proposto negli ultimi 30 giorni (`DAILY_GAP`). Così i casi che
+  nessuno fa tornano più avanti. Conta solo chi gioca con un detective. Il gioco lo legge da `GET /api/daily` (copia in `tw:daily`).
+  Nei test locali `ALLOW_TEST_DAY=1` (in `.dev.vars`, mai in produzione) permette di simulare un giorno con l'intestazione `X-Test-Day`.
 - Sicurezza: PIN/codici/password con PBKDF2 + sale + segreto `PEPPER` del server (**non cambiarlo**: tutti i PIN smetterebbero di funzionare;
   copia locale in `worker/.dev.vars`, ignorato da git). Dopo 5 errori blocco di 15 minuti; max 40 errori l'ora per rete.
 - Piano gratuito Cloudflare: ~100.000 richieste/giorno, D1 5 milioni di letture/giorno. Non va in pausa.
@@ -131,3 +134,4 @@ senza una migrazione, altrimenti tutti perdono i progressi. Il prefisso `gq` vie
 - **2026-11-12** — Caso del giorno sempre **10×10**. Archivio portato a 520 casi: 10×10 = 100, 11–14 = 50 ciascuno
   (i 410 casi precedenti ci sono tutti; dal 10×10 in su alcuni hanno cambiato numero, i progressi no perché usano l'impronta).
 - **2026-11-12** — 10×10 portati a **365** (archivio 785 casi). Il caso del giorno ora è una rotazione senza ripetizioni per un anno.
+- **2026-11-12** — Caso del giorno deciso dal server: un caso che nessuno risolve torna in rotazione dopo almeno 30 giorni.

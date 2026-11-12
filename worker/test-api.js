@@ -2,6 +2,7 @@
 //   cd worker && npx wrangler dev --port 8787   (in un altro terminale)
 //   node test-api.js
 import { CASES } from './src/cases.js';
+import { execSync } from 'node:child_process';
 
 const API = process.env.API || 'http://127.0.0.1:8787';
 if (!/127\.0\.0\.1|localhost/.test(API)) { console.error('Il test crea detective finti: usalo solo in locale.'); process.exit(1); }
@@ -90,6 +91,25 @@ const lv = await call('POST', '/api/team/leave', null, A);
 ok(lv.team === null, 'il capitano esce');
 const me2 = await call('GET', '/api/me', null, c.token);
 ok(me2.team && me2.team.members.length === 2 && me2.team.members.some(m => m.captain), 'nuovo capitano assegnato', me2.team);
+
+// caso del giorno: chi non lo risolve lo ritrova più avanti (serve ALLOW_TEST_DAY=1 in .dev.vars)
+execSync('npx wrangler d1 execute twindoku --local --command "DELETE FROM daily"', { stdio: 'ignore' });
+const DH = d => ({ ...H, 'X-Test-Day': d });
+const daily = async (d, token) => (await fetch(API + '/api/daily', { headers: DH(d) })).json();
+const d1 = await daily('2030-01-01');
+ok(d1.key && d1.id.startsWith('10-') && d1.day === '2030-01-01', 'caso del giorno 10×10', d1);
+ok((await daily('2030-01-01')).key === d1.key, 'stesso caso per tutto il giorno');
+// qualcuno lo risolve il primo giorno
+await fetch(API + '/api/progress', { method: 'POST', headers: { ...DH('2030-01-01'), Authorization: 'Bearer ' + c.token }, body: JSON.stringify({ items: [{ key: d1.key, hints: 0, secs: 300 }] }) });
+const d2 = await daily('2030-01-02');
+ok(d2.key !== d1.key, 'giorno dopo: caso nuovo');
+// nessuno risolve il caso del 2 gennaio
+const d3 = await daily('2030-01-03');
+ok(d3.key !== d2.key && d3.key !== d1.key, 'un caso non risolto non si ripete subito');
+const d4 = await daily('2030-02-02');
+ok(d4.key === d2.key, 'dopo 30 giorni torna il caso che nessuno aveva risolto', { d2, d4 });
+const d5 = await daily('2030-03-15');
+ok(d5.key !== d1.key, 'il caso risolto non torna', { d1, d5 });
 
 console.log(fails ? `\n${fails} controlli falliti` : '\nTutto ok');
 process.exit(fails ? 1 : 0);

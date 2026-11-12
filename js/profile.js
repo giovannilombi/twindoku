@@ -1,6 +1,6 @@
 // Interfaccia dei detective: chi gioca, registrazione, accesso, recupero PIN, taccuino, squadre, distintivi.
 import * as acc from './account.js';
-import { BADGES, RANKS, rankOf, dailyCase } from './gamify.js';
+import { BADGES, RANKS, rankOf } from './gamify.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -206,7 +206,7 @@ export function initProfile(ctx) {
     const st = me.stats, r = rankOf(st.points), next = r.next;
     const pct = next ? Math.round(((st.points - r.min) / (next.min - r.min)) * 100) : 100;
     const total = ctx.cases().length || st.total;
-    const daily = me.daily || (dailyCase(ctx.cases()) && { id: dailyCase(ctx.cases())[3], key: dailyCase(ctx.cases())[0] });
+    const daily = me.daily || acc.dailyToday();
     const dDone = daily && me.solved.some(([k]) => k === daily.key);
     const streak = st.streak.current;
     openModal(`<div class="nb">
